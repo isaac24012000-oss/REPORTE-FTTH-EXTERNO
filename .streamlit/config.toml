@@ -1,3 +1,14 @@
+[client]
+showErrorDetails = true
+
+[server]
+maxUploadSize = 200
+enableXsrfProtection = true
+runOnSave = false
+
+[logger]
+level = "info"
+
 [theme]
 base = "light"
 primaryColor = "#0066cc"

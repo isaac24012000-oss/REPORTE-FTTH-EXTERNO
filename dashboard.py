@@ -16,7 +16,7 @@ st.set_page_config(
 
 # ============= CARGA DE DATOS DEL EXCEL =============
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)  # 1 hora en local, más en Cloud
 def load_mantra_data():
     """Carga datos de la hoja MANTRA del archivo REPORTE FTTH.xlsx
     Actualizado: 02/03/2026 - Ahora filtra por MES en lugar de FECHA"""
@@ -331,7 +331,7 @@ def load_lista_metas():
     except Exception as e:
         return None
 
-@st.cache_data(ttl=30)  # Reducir para asegurar datos frescos
+@st.cache_data(ttl=3600)  # 1 hora de caché
 def load_drive_data():
     """Carga datos de la hoja DRIVE del archivo REPORTE FTTH.xlsx"""
     excel_path = os.path.join(os.path.dirname(__file__), 'REPORTE FTTH.xlsx')
@@ -453,7 +453,7 @@ def debug_instaladas_por_dia(mes_seleccionado="Febrero", dia=3):
     # Retornar TODOS los registros sin filtrar
     return df_filtrado
 
-@st.cache_data(ttl=60)  # Reducir a 60 segundos para debug
+@st.cache_data(ttl=3600)  # 1 hora de caché
 def get_instaladas_por_semana(mes_seleccionado="Noviembre"):
     """Obtiene VENTAS por DÍA para un mes específico.
     VENTAS = todos los registros del mes (sin importar PAGO o ESTADO)
@@ -1413,8 +1413,11 @@ def get_recomendaciones_asesor(asesor, kpis, mes_seleccionado="Marzo"):
     
     return recomendaciones
 
-# Estilos mejorados con tema moderno y premium
-st.markdown("""
+# Estilos mejorados con tema moderno y premium - CACHEADO
+@st.cache_data(ttl=86400)  # Cache por 24 horas
+def apply_custom_css():
+    """Aplica estilos CSS personalizados una sola vez"""
+    st.markdown("""
 <style>
     :root {
         --primary-color: #0066cc;
@@ -1792,6 +1795,9 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Aplicar CSS cache al inicio
+apply_custom_css()
 
 # Filtros mejorados con layout dinámico
 st.markdown("### ⚙️ Filtros y Opciones")
