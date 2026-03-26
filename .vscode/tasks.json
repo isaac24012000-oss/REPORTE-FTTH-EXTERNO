@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Ejecutar Dashboard",
+			"type": "shell",
+			"command": "streamlit run dashboard.py",
+			"isBackground": true
+		}
+	]
+}
