@@ -735,19 +735,47 @@ def get_con_cobertura_asesor_mes(asesor, mes_seleccionado="Enero"):
     return con_cobertura
 
 def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
-    """Calcula la conversión por asesor: Contrato OK / Con Cobertura (de MANTRA)
-    Usando datos de MANTRA únicamente"""
+    """Calcula la conversión por asesor: Transacciones CON PAGO en DRIVE / Con Cobertura (de MANTRA)
+    Cuenta todas las transacciones (INSTALADAS + CANCELADAS) que tengan PAGO"""
+    df_drive = load_drive_data()
     df_mantra = load_mantra_data()
     
-    if df_mantra is None or df_mantra.empty:
+    if df_drive is None or df_drive.empty or df_mantra is None or df_mantra.empty:
         return 0
     
-    # Limpiar espacios en los nombres de asesor
-    df_mantra['Agente'] = df_mantra['Agente'].astype(str).str.strip()
-    asesor = asesor.strip()
+    # ========= CONTAR PAGO EN DRIVE =========
+    # Filtrar DRIVE por mes y asesor
+    df_drive_temp = df_drive.copy()
+    df_drive_temp['ASESOR'] = df_drive_temp['ASESOR'].astype(str).str.strip()
+    asesor_clean = asesor.strip()
     
-    # Obtener nombres alternativos
-    nombres_alternativos = get_nombres_alternativos(asesor)
+    # Filtrar por mes del DRIVE
+    if 'MES' in df_drive_temp.columns:
+        df_mes_drive = df_drive_temp[
+            (df_drive_temp['MES'] == mes_seleccionado) & 
+            (df_drive_temp['ASESOR'] == asesor_clean)
+        ].copy()
+    else:
+        df_mes_drive = df_drive_temp[df_drive_temp['ASESOR'] == asesor_clean].copy()
+    
+    if df_mes_drive.empty:
+        return 0
+    
+    # Contar transacciones con PAGO (sin importar ESTADO)
+    # PAGO = cualquier valor que NO sea null/NaN/vacío
+    df_mes_drive['PAGO'] = df_mes_drive['PAGO'].astype(str).str.strip()
+    transacciones_pago = len(df_mes_drive[
+        (df_mes_drive['PAGO'] != '') & 
+        (df_mes_drive['PAGO'] != 'nan') &
+        (df_mes_drive['PAGO'].notna())
+    ])
+    
+    # ========= CONTAR CON COBERTURA EN MANTRA =========
+    # Limpiar espacios en los nombres de asesor en MANTRA
+    df_mantra['Agente'] = df_mantra['Agente'].astype(str).str.strip()
+    
+    # Obtener nombres alternativos del asesor
+    nombres_alternativos = get_nombres_alternativos(asesor_clean)
     
     # Obtener datos del asesor en MANTRA para el mes
     df_mes_mantra = None
@@ -760,24 +788,17 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     if df_mes_mantra is None or df_mes_mantra.empty:
         return 0
     
-    # Limpiar niveles
+    # Limpiar NIVEL 2
     df_mes_mantra['NIVEL 2'] = df_mes_mantra['NIVEL 2'].astype(str).str.strip()
-    df_mes_mantra['NIVEL 3'] = df_mes_mantra['NIVEL 3'].astype(str).str.strip()
     
-    # Con Cobertura
+    # Contar "Con Cobertura"
     con_cobertura = len(df_mes_mantra[df_mes_mantra['NIVEL 2'] == 'Con Cobertura'])
     
     if con_cobertura == 0:
         return 0
     
-    # Contrato OK (Con Cobertura + Contrato OK)
-    contrato_ok = len(df_mes_mantra[
-        (df_mes_mantra['NIVEL 2'] == 'Con Cobertura') & 
-        (df_mes_mantra['NIVEL 3'] == 'Contrato OK')
-    ])
-    
-    # Conversión = Contrato OK / Con Cobertura
-    conversion_pct = round((contrato_ok / con_cobertura * 100)) if con_cobertura > 0 else 0
+    # Conversión = Transacciones con PAGO / Con Cobertura
+    conversion_pct = round((transacciones_pago / con_cobertura * 100)) if con_cobertura > 0 else 0
     return conversion_pct
 
 @st.cache_data(ttl=3600)
