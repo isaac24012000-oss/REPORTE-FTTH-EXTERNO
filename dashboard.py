@@ -3340,7 +3340,11 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
-                st.bar_chart(tendencias, use_container_width=True)
+                # Usar Plotly en lugar de st.bar_chart para evitar problemas con Altair
+                tendencias_reset = tendencias.reset_index()
+                fig = px.bar(tendencias_reset, x='SEMANA', y=tendencias_reset.columns.difference(['SEMANA']),
+                            title='Tendencias por Semana', barmode='group')
+                st.plotly_chart(fig, use_container_width=True)
             
             with col_table:
                 st.dataframe(tendencias, use_container_width=True)
