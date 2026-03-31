@@ -1861,11 +1861,11 @@ total_leads_excel, total_conversion_excel = get_total_leads_and_conversion(mes)
 
 # KPI Cards mejorados - Datos del asesor seleccionado o totales
 def get_cumplimiento_total_mes(mes_nombre):
-    """Calcula el cumplimiento total del mes: (Total Instaladas / Total de Metas) * 100"""
-    df_lista = load_lista_metas()
+    """Calcula el cumplimiento total del mes: (Instaladas / 680) * 100
+    Donde 680 es la meta global del mes"""
     df_drive = load_drive_data()
     
-    if df_lista is None or df_lista.empty or df_drive is None or df_drive.empty:
+    if df_drive is None or df_drive.empty:
         return 0
     
     try:
@@ -1880,19 +1880,15 @@ def get_cumplimiento_total_mes(mes_nombre):
         if mes_num is None:
             return 0
         
-        # Obtener total de metas para el mes
-        df_mes_metas = df_lista[df_lista['Mes'] == mes_nombre]
-        total_metas = df_mes_metas['Meta'].sum()
-        
-        if total_metas == 0:
-            return 0
-        
         # Aplicar regla: INSTALADO - pasando mes_nombre para filtrar por MES column
         es_noviembre = mes_num == 11
         total_instaladas = count_instaladas_con_regla(df_drive, mes_num, es_noviembre, mes_nombre)
         
-        # Calcular cumplimiento
-        cumplimiento_total = round((total_instaladas / total_metas * 100))
+        # Meta global fija: 680
+        meta_global = 680
+        
+        # Calcular cumplimiento: (Instaladas / Meta Global) * 100
+        cumplimiento_total = round((total_instaladas / meta_global * 100))
         
         return cumplimiento_total
     except Exception as e:
