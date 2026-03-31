@@ -2621,8 +2621,8 @@ df_detail['Leads'] = leads_list
 df_detail['Con Cobertura'] = con_cobertura_list
 
 # Separar en Full Time (meta >= 55) y Part Time (meta < 55)
-# Excepción: CARLACA, ISABEL y LAURA son FULL TIME aunque tengan meta 45
-asesoras_fulltime_especial = ['ZIM_CARLACA_VTP', 'ZIM_ISABELPF_VTP', 'ZIM_LAURAVS_VTP']
+# Excepción: ISABEL y LAURA son FULL TIME aunque tengan meta 45
+asesoras_fulltime_especial = ['ZIM_ISABELPF_VTP', 'ZIM_LAURAVS_VTP']
 condicion_fulltime = (df_detail['Meta'] >= 55) | (df_detail['Asesor'].isin(asesoras_fulltime_especial))
 df_fulltime = df_detail[condicion_fulltime].copy()
 df_parttime = df_detail[~condicion_fulltime].copy()
@@ -2725,6 +2725,23 @@ st.markdown("#### 👥 Detalle Completo de Todos los Asesores")
 df_codigos_carga = load_data_codigo_carga(mes)
 
 if not df_codigos_carga.empty:
+    # Función para calcular color basado en porcentaje
+    def get_color_for_percentage(percentage):
+        """
+        Retorna color basado en porcentaje.
+        >= 60%: Verde
+        < 60%: Escala de rojo (más bajo = más intenso)
+        """
+        if percentage >= 60:
+            return '#10b981'  # Verde
+        else:
+            # Escala de rojo desde claro (59%) a intenso (0%)
+            # Interpolamos de #FFB3B3 (rojo claro) a #FF0000 (rojo intenso)
+            normalized = (60 - percentage) / 60  # 0 cuando 60%, 1 cuando 0%
+            g_value = int(179 * (1 - normalized))  # De 179 a 0
+            b_value = int(179 * (1 - normalized))  # De 179 a 0
+            return f'#FF{g_value:02X}{b_value:02X}'
+    
     # Crear tabla HTML con el formato deseado
     def generar_tabla_codigos_carga(df_datos):
         """Genera tabla HTML para datos agrupados por CODIGO DE CARGA"""
@@ -2761,20 +2778,10 @@ if not df_codigos_carga.empty:
                 color_ventas = '#64748b'  # Gris
             
             # Determinar color para conversión respecto a leads
-            if conv_ventas >= 10:
-                color_conv = '#10b981'  # Verde
-            elif conv_ventas == 9:
-                color_conv = '#f59e0b'  # Naranja
-            else:
-                color_conv = '#ef4444'  # Rojo
+            color_conv = get_color_for_percentage(conv_ventas)
             
             # Determinar color para conversión respecto a con cobertura
-            if conv_ventas_cob >= 10:
-                color_conv_cob = '#10b981'  # Verde
-            elif conv_ventas_cob == 9:
-                color_conv_cob = '#f59e0b'  # Naranja
-            else:
-                color_conv_cob = '#ef4444'  # Rojo
+            color_conv_cob = get_color_for_percentage(conv_ventas_cob)
             
             html += f'''<tr style="background-color: {color_fila}; border-bottom: 1px solid #e5e7eb;">
                 <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px; color: #0066cc;">#{pos}</td>
@@ -2793,21 +2800,9 @@ if not df_codigos_carga.empty:
         total_conv_ventas_cob = int((total_ventas / total_con_cobertura * 100)) if total_con_cobertura > 0 else 0
         total_conv_ventas = int((total_ventas / total_leads * 100)) if total_leads > 0 else 0
         
-        # Determinar color para conversión total respecto a con cobertura
-        if total_conv_ventas_cob >= 10:
-            color_conv_total_cob = '#10b981'  # Verde
-        elif total_conv_ventas_cob == 9:
-            color_conv_total_cob = '#f59e0b'  # Naranja
-        else:
-            color_conv_total_cob = '#ef4444'  # Rojo
-        
-        # Determinar color para conversión total respecto a leads
-        if total_conv_ventas >= 10:
-            color_conv_total = '#10b981'  # Verde
-        elif total_conv_ventas == 9:
-            color_conv_total = '#f59e0b'  # Naranja
-        else:
-            color_conv_total = '#ef4444'  # Rojo
+        # Determinar color para conversión total respecto a con cobertura y a leads
+        color_conv_total_cob = get_color_for_percentage(total_conv_ventas_cob)
+        color_conv_total = get_color_for_percentage(total_conv_ventas)
         
         html += f'''<tr style="background: linear-gradient(135deg, #0066cc 0%, #00d4ff 100%); color: white; font-weight: 700;">
             <td style="padding: 12px; text-align: center; font-weight: 700; font-size: 12px;"></td>
@@ -2828,6 +2823,94 @@ if not df_codigos_carga.empty:
     # Generar y mostrar tabla
     html_tabla = generar_tabla_codigos_carga(df_codigos_carga)
     st.markdown(html_tabla, unsafe_allow_html=True)
+    
+    # ============= FILTRO Y ANÁLISIS DE ASESORES EN RIESGO =============
+    st.markdown("#### 🎯 Filtro de Asesores")
+    
+    # Crear filtro multiselect para excluir asesores
+    col_filtro1, col_filtro2 = st.columns([3, 1])
+    
+    with col_filtro1:
+        asesores_todos = sorted(df_codigos_carga['CODIGO_CARGA'].tolist())
+        asesores_excluir = st.multiselect(
+            "Excluir asesores (vacaciones, descanso, dados de baja, etc.)",
+            options=asesores_todos,
+            default=[],
+            key=f"excluir_asesores_{mes}"
+        )
+    
+    # Filtrar dataframe excluyendo asesores seleccionados
+    df_codigos_filtrado = df_codigos_carga[~df_codigos_carga['CODIGO_CARGA'].isin(asesores_excluir)].copy()
+    
+    # ============= CUADRO DE ASESORES EN RIESGO =============
+    st.markdown("#### ⚠️ Asesores en Riesgo (Conversión < 60%)")
+    
+    # Filtrar asesores con conversión < 60%
+    df_en_riesgo = df_codigos_filtrado[df_codigos_filtrado['CONV_VENTAS_COB'] < 60].copy()
+    
+    if not df_en_riesgo.empty:
+        # Ordenar por conversión (de menor a mayor)
+        df_en_riesgo = df_en_riesgo.sort_values('CONV_VENTAS_COB').reset_index(drop=True)
+        
+        def generar_tabla_riesgo(df_datos):
+            """Genera tabla HTML para asesores en riesgo"""
+            html = '''<div style="margin: 20px 0; background: white; border-radius: 8px; overflow: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif;">
+            <thead>
+                <tr style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%); color: white;">
+                    <th style="padding: 14px; text-align: center; font-weight: 700; font-size: 12px; border-right: 1px solid rgba(255,255,255,0.2);">POSICIÓN</th>
+                    <th style="padding: 14px; text-align: left; font-weight: 700; font-size: 12px; border-right: 1px solid rgba(255,255,255,0.2); min-width: 180px;">ASESOR</th>
+                    <th style="padding: 14px; text-align: center; font-weight: 700; font-size: 12px; border-right: 1px solid rgba(255,255,255,0.2);">LEADS</th>
+                    <th style="padding: 14px; text-align: center; font-weight: 700; font-size: 12px; border-right: 1px solid rgba(255,255,255,0.2);">CON COBERTURA</th>
+                    <th style="padding: 14px; text-align: center; font-weight: 700; font-size: 12px; border-right: 1px solid rgba(255,255,255,0.2);">VENTAS</th>
+                    <th style="padding: 14px; text-align: center; font-weight: 700; font-size: 12px;">CONVERSIÓN %</th>
+                </tr>
+            </thead>
+            <tbody>
+            '''
+            
+            for idx, row in df_datos.iterrows():
+                color_fila = '#fff5f5' if idx % 2 == 0 else '#ffffff'
+                codigo = row['CODIGO_CARGA']
+                leads = int(row['LEADS'])
+                con_cobertura = int(row['CON_COBERTURA'])
+                ventas = int(row['VENTAS'])
+                conv = int(row['CONV_VENTAS_COB'])
+                
+                # Usamos la función get_color_for_percentage para el color
+                color_conv = get_color_for_percentage(conv)
+                
+                html += f'''<tr style="background-color: {color_fila}; border-bottom: 1px solid #ffe0e0;">
+                    <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px; color: #ff6b6b;">#{idx + 1}</td>
+                    <td style="padding: 12px; text-align: left; font-weight: 500; font-size: 12px;">{codigo}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px;">{leads}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px;">{con_cobertura}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px;">{ventas}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: 600; font-size: 12px; background-color: {color_conv}33; color: {color_conv}; border-radius: 4px; font-weight: 700;">{conv}%</td>
+                </tr>'''
+            
+            html += '''</tbody>
+            </table>
+            </div>'''
+            return html
+        
+        html_riesgo = generar_tabla_riesgo(df_en_riesgo)
+        st.markdown(html_riesgo, unsafe_allow_html=True)
+        
+        # Mostrar estadísticas de asesores en riesgo
+        st.markdown("**📊 Estadísticas de Asesores en Riesgo:**")
+        col_est1, col_est2, col_est3, col_est4 = st.columns(4)
+        
+        with col_est1:
+            st.metric("Total en Riesgo", len(df_en_riesgo))
+        with col_est2:
+            st.metric("Promedio Conversión", f"{df_en_riesgo['CONV_VENTAS_COB'].mean():.1f}%")
+        with col_est3:
+            st.metric("Más Bajo", f"{df_en_riesgo['CONV_VENTAS_COB'].min()}%")
+        with col_est4:
+            st.metric("Total Leads", int(df_en_riesgo['LEADS'].sum()))
+    else:
+        st.success("✅ ¡Excelente! No hay asesores en riesgo. Todos superan el 60% de conversión.")
     
     # Mostrar estadísticas generales
     st.markdown("#### 📊 Resumen General por Mes")
