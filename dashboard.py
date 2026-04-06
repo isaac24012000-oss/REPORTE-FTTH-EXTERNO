@@ -209,6 +209,59 @@ def get_ventas_generales_mes(mes_seleccionado="Noviembre"):
     return total_transacciones
 
 @st.cache_data(ttl=3600)
+def get_ventas_del_mes_por_fecha(mes_seleccionado="Abril"):
+    """Obtiene SOLO las transacciones cuya FECHA cae dentro del mes especificado.
+    NO incluye transacciones de fechas anteriores que se estén procesando ahora.
+    Filtra por FECHA exacta: 1/4 al 30/4 (o último día del mes)"""
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty:
+        return 0
+    
+    # Mapeo de meses a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    if mes_num is None:
+        return 0
+    
+    # Convertir FECHA a datetime
+    df_temp = df_drive.copy()
+    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
+    
+    # Eliminar registros sin fecha válida
+    df_temp = df_temp[df_temp['FECHA'].notna()]
+    
+    # Obtener año (asumir el año más reciente disponible)
+    if df_temp.empty:
+        return 0
+    
+    año_filtro = df_temp['FECHA'].dt.year.max()
+    
+    # Crear rango de fechas para el mes
+    fecha_inicio = pd.Timestamp(year=año_filtro, month=mes_num, day=1)
+    
+    # Calcular último día del mes
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_filtro + 1, month=1, day=1) - pd.DateOffset(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_filtro, month=mes_num + 1, day=1) - pd.DateOffset(days=1)
+    
+    # Filtrar SOLO por FECHA dentro del rango
+    df_mes = df_temp[
+        (df_temp['FECHA'] >= fecha_inicio) & 
+        (df_temp['FECHA'] <= fecha_fin)
+    ]
+    
+    # Contar todas las transacciones de ese mes
+    total_ventas = len(df_mes)
+    return total_ventas
+
+@st.cache_data(ttl=3600)
 def get_no_pago_mes(mes_seleccionado="Noviembre"):
     """Obtiene el conteo de NO PAGO para un mes específico usando columna MES"""
     df_drive = load_drive_data()
@@ -1976,8 +2029,8 @@ vista = "Completa"
 # Obtener valores del Excel basado en el mes seleccionado
 total_leads_excel, _ = get_total_leads_and_conversion(mes)
 
-# Obtener Ventas Del Mes desde DRIVE (todas las transacciones, no solo Contrato OK de MANTRA)
-total_conversion_excel = get_ventas_generales_mes(mes)
+# Obtener Ventas Del Mes desde DRIVE (SOLO transacciones con FECHA en el mes, sin incluir antiguas)
+total_conversion_excel = get_ventas_del_mes_por_fecha(mes)
 
 # KPI Cards mejorados - Datos del asesor seleccionado o totales
 def get_cumplimiento_total_mes(mes_nombre):
