@@ -823,14 +823,15 @@ def get_semana_actual():
 
 @st.cache_data(ttl=3600)
 def get_cumplimiento_asesor_semana_actual(asesor, meta_mensual, mes_seleccionado="Abril"):
-    """Obtiene el cumplimiento del asesor para LA SEMANA ACTUAL.
-    Calcula: (Ventas reales en semana / Meta esperada para esa semana) × 100
+    """Obtiene el cumplimiento del asesor contra su meta mensual.
+    Calcula: (Ventas reales acumuladas en semana / Meta mensual) × 100
     
-    Meta esperada por semana:
-    - Semana 1: 25% de la meta mensual
-    - Semana 2: 50% de la meta mensual (acumulado)
-    - Semana 3: 75% de la meta mensual (acumulado)
-    - Semana 4: 100% de la meta mensual (acumulado)
+    Retorna el porcentaje de cumplimiento contra la meta mensual total.
+    Evaluación basada en semana:
+    - Semana 1: Debe estar al ≥25% de su meta
+    - Semana 2: Debe estar al ≥50% de su meta
+    - Semana 3: Debe estar al ≥75% de su meta
+    - Semana 4: Debe estar al ≥100% de su meta
     """
     df_drive = load_drive_data()
     
@@ -862,36 +863,31 @@ def get_cumplimiento_asesor_semana_actual(asesor, meta_mensual, mes_seleccionado
     if mes_num is None:
         return 0
     
-    # Filtra por mes y asesor (solo INSTALADO)
+    # Filtra por mes y asesor (TODAS las transacciones sin importar ESTADO)
     df_temp['FECHA_MES'] = df_temp['FECHA'].dt.month
     df_temp['FECHA_DIA'] = df_temp['FECHA'].dt.day
     df_temp['ESTADO'] = df_temp['ESTADO'].astype(str).str.strip()
     
     df_asesor_mes = df_temp[
         (df_temp['FECHA_MES'] == mes_num) &
-        (df_temp['ASESOR'].isin(nombres_alternativos)) &
-        (df_temp['ESTADO'] == 'INSTALADO')
+        (df_temp['ASESOR'].isin(nombres_alternativos))
     ]
     
     if df_asesor_mes.empty:
         return 0
     
-    # Contar ventas en la semana actual
+    # Contar ventas acumuladas hasta hoy en la semana actual
     if semana_num == 1:
         ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 7])
-        meta_esperada = round(meta_mensual * 0.25)
     elif semana_num == 2:
         ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 14])
-        meta_esperada = round(meta_mensual * 0.50)
     elif semana_num == 3:
         ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 21])
-        meta_esperada = round(meta_mensual * 0.75)
     else:  # semana 4
         ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 31])
-        meta_esperada = round(meta_mensual * 1.00)
     
-    # Calcular cumplimiento%
-    cumplimiento_pct = int((ventas_semana / meta_esperada * 100)) if meta_esperada > 0 else 0
+    # Calcular cumplimiento% contra la META MENSUAL (no semanal)
+    cumplimiento_pct = int((ventas_semana / meta_mensual * 100)) if meta_mensual > 0 else 0
     
     return cumplimiento_pct
 
@@ -2917,15 +2913,20 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
         # Calcular CUMPL% para la semana actual basado en la meta individual
         cumpl_semana = get_cumplimiento_asesor_semana_actual(asesor, meta, mes)
         
-        # Determinar estado y color basado en cumplimiento semanal
-        if cumpl_semana >= 100:
-            cumpl_color = '#10b981'  # Verde - Excelente
+        # Obtener semana actual y meta esperada
+        semana_num, _ = get_semana_actual()
+        metas_esperadas = {1: 25, 2: 50, 3: 75, 4: 100}
+        meta_esperada_porcentaje = metas_esperadas.get(semana_num, 25)
+        
+        # Determinar estado y color basado en si está alcanzando la meta esperada para la semana
+        if cumpl_semana >= meta_esperada_porcentaje:
+            cumpl_color = '#10b981'  # Verde - Excelente (en ruta)
             cumpl_bg_color = 'rgba(16, 185, 129, 0.2)'
-        elif cumpl_semana >= 60:
-            cumpl_color = '#f59e0b'  # Naranja - Regular
+        elif cumpl_semana >= (meta_esperada_porcentaje * 0.5):
+            cumpl_color = '#f59e0b'  # Naranja - Cercano (al 50% de la meta esperada)
             cumpl_bg_color = 'rgba(245, 158, 11, 0.2)'
         else:
-            cumpl_color = '#ef4444'  # Rojo - Crítico
+            cumpl_color = '#ef4444'  # Rojo - Crítico (muy por debajo)
             cumpl_bg_color = 'rgba(239, 68, 68, 0.2)'
         
         # Determinar estado general basado en CONVERSIÓN (Efectividad)
