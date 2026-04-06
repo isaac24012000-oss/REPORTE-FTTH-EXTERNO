@@ -1974,7 +1974,10 @@ with col_filtros[1]:
 vista = "Completa"
 
 # Obtener valores del Excel basado en el mes seleccionado
-total_leads_excel, total_conversion_excel = get_total_leads_and_conversion(mes)
+total_leads_excel, _ = get_total_leads_and_conversion(mes)
+
+# Obtener Ventas Del Mes desde DRIVE (todas las transacciones, no solo Contrato OK de MANTRA)
+total_conversion_excel = get_ventas_generales_mes(mes)
 
 # KPI Cards mejorados - Datos del asesor seleccionado o totales
 def get_cumplimiento_total_mes(mes_nombre):
