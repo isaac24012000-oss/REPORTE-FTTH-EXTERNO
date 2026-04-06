@@ -2308,7 +2308,7 @@ if asesor_seleccionado == "Todos":
         (f"{total_leads_excel:,}", "📋 Leads", col1),
         (str(get_con_cobertura_count(mes)), "🌐 Con Cobertura", col2),
         (f"{total_conversion_excel}", "✅ Ventas Del Mes", col3),
-        (str(ventas_total), "💰 Ventas Instaladas Del Mes", col4),
+        (f"{round((total_conversion_excel / total_leads_excel * 100))}%", "📊 % Conversión Total", col4),
         (str(ventas_generales), "📈 Ventas Generales Del Mes", col5),
         (f"{efectividad_mes}%", "⭐ Conversión de Ventas", col6),
         (f"{cumplimiento_total}%", "🎯 Cumplimiento", col7),
