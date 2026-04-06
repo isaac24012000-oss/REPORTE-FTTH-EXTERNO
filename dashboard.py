@@ -2315,22 +2315,16 @@ if asesor_seleccionado == "Todos":
     ]
 else:
     asesor_data = df[df['Asesor'] == asesor_seleccionado].iloc[0]
+    cumpl_val = int(asesor_data['Cumplimiento'])
     efect_val = int(asesor_data['Efectividad'])
     instaladas_asesor = int(asesor_data['Instaladas'])
-    pendientes_asesor = get_pendientes_asesor_mes(asesor_seleccionado, mes)
-    meta_asesor = int(asesor_data['Meta'])
-    
-    # Cumplimiento = (INSTALADAS + PENDIENTES) / META * 100
-    ventas_totales_asesor = instaladas_asesor + pendientes_asesor
-    cumpl_val = round((ventas_totales_asesor / meta_asesor * 100)) if meta_asesor > 0 else 0
-    
     leads_asesor = get_leads_asesor_mes(asesor_seleccionado, mes)
     con_cobertura_asesor = get_con_cobertura_asesor_mes(asesor_seleccionado, mes)
     
     kpis = [
         (str(leads_asesor), "📋 Total Leads", col1),
         (str(con_cobertura_asesor), "🌐 Con Cobertura", col2),
-        (str(meta_asesor), "🏆 Meta", col3),
+        (str(int(asesor_data['Meta'])), "🏆 Meta", col3),
         (f"{cumpl_val}%", "✅ Cumplimiento", col4),
         (f"{efect_val}%", "⭐ Conv. Ventas", col5),
         (str(instaladas_asesor), "💰 Instaladas", col6),
