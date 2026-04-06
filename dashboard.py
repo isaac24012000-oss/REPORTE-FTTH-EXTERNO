@@ -638,6 +638,122 @@ def get_comparativo_acumulativo_multiples_meses():
     return df_acumulativo
 
 @st.cache_data(ttl=3600)
+def get_progreso_semanal(mes_seleccionado="Abril"):
+    """Obtiene el progreso semanal vs la meta esperada.
+    Meta esperada por semana: 
+    - Semana 1 (días 1-7): 25% 
+    - Semana 2 (días 8-14): 50%
+    - Semana 3 (días 15-21): 75%
+    - Semana 4 (días 22-31): 100%
+    Retorna DataFrame con semana, instaladas reales, meta esperada, y porcentaje de cumplimiento"""
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty:
+        return pd.DataFrame()
+    
+    df_temp = df_drive.copy()
+    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
+    
+    # Mapeo de meses
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    if mes_num is None:
+        return pd.DataFrame()
+    
+    # Filtrar por fecha válida
+    df_temp = df_temp[df_temp['FECHA'].notna()]
+    
+    # FILTRO POR FECHA ACTUAL - no mostrar fechas futuras
+    fecha_actual = pd.Timestamp.today()
+    df_temp = df_temp[df_temp['FECHA'] <= fecha_actual]
+    
+    # Extraer mes y año de FECHA
+    df_temp['FECHA_MES'] = df_temp['FECHA'].dt.month
+    df_temp['FECHA_AÑO'] = df_temp['FECHA'].dt.year
+    df_temp['FECHA_DIA'] = df_temp['FECHA'].dt.day
+    
+    # Filtrar por mes exacto
+    df_mes = df_temp[df_temp['FECHA_MES'] == mes_num].copy()
+    
+    if df_mes.empty:
+        return pd.DataFrame()
+    
+    # Si hay múltiples años, tomar el más reciente
+    año_filtro = df_mes['FECHA_AÑO'].max()
+    df_mes = df_mes[df_mes['FECHA_AÑO'] == año_filtro]
+    
+    # Contar por día (todos los registros sin importar PAGO o ESTADO)
+    df_dias = df_mes.groupby('FECHA_DIA').size().reset_index(name='INSTALADAS')
+    
+    # Calcular acumulado
+    df_dias['ACUMULADO'] = df_dias['INSTALADAS'].cumsum()
+    
+    # Obtener total mensual
+    total_mes = df_dias['INSTALADAS'].sum()
+    
+    # Asignar a semanas
+    semanas_data = []
+    
+    # Semana 1: días 1-7
+    df_semana1 = df_dias[df_dias['FECHA_DIA'] <= 7]
+    acum_sem1 = df_semana1['INSTALADAS'].sum() if not df_semana1.empty else 0
+    semanas_data.append({
+        'Semana': 1,
+        'Dias': '1-7',
+        'Reales': acum_sem1,
+        'Meta_Esperada': round(total_mes * 0.25) if total_mes > 0 else 0,
+        'Total_Mes': total_mes
+    })
+    
+    # Semana 2: días 8-14
+    df_semana2 = df_dias[(df_dias['FECHA_DIA'] >= 8) & (df_dias['FECHA_DIA'] <= 14)]
+    acum_sem2 = acum_sem1 + (df_semana2['INSTALADAS'].sum() if not df_semana2.empty else 0)
+    semanas_data.append({
+        'Semana': 2,
+        'Dias': '8-14',
+        'Reales': acum_sem2,
+        'Meta_Esperada': round(total_mes * 0.50) if total_mes > 0 else 0,
+        'Total_Mes': total_mes
+    })
+    
+    # Semana 3: días 15-21
+    df_semana3 = df_dias[(df_dias['FECHA_DIA'] >= 15) & (df_dias['FECHA_DIA'] <= 21)]
+    acum_sem3 = acum_sem2 + (df_semana3['INSTALADAS'].sum() if not df_semana3.empty else 0)
+    semanas_data.append({
+        'Semana': 3,
+        'Dias': '15-21',
+        'Reales': acum_sem3,
+        'Meta_Esperada': round(total_mes * 0.75) if total_mes > 0 else 0,
+        'Total_Mes': total_mes
+    })
+    
+    # Semana 4: días 22-31
+    df_semana4 = df_dias[df_dias['FECHA_DIA'] >= 22]
+    acum_sem4 = acum_sem3 + (df_semana4['INSTALADAS'].sum() if not df_semana4.empty else 0)
+    semanas_data.append({
+        'Semana': 4,
+        'Dias': '22-31',
+        'Reales': acum_sem4,
+        'Meta_Esperada': round(total_mes * 1.00) if total_mes > 0 else 0,
+        'Total_Mes': total_mes
+    })
+    
+    df_resultado = pd.DataFrame(semanas_data)
+    
+    # Calcular porcentaje de cumplimiento vs meta esperada
+    df_resultado['Cumplimiento%'] = df_resultado.apply(
+        lambda row: int((row['Reales'] / row['Meta_Esperada'] * 100)) if row['Meta_Esperada'] > 0 else 0,
+        axis=1
+    )
+    
+    return df_resultado
+
+@st.cache_data(ttl=3600)
 def get_nombres_alternativos(asesor):
     """Obtiene múltiples variantes del nombre del asesor para búsqueda flexible"""
     nombres = [asesor.strip()]
@@ -2350,6 +2466,120 @@ with tab1:
                 "Instaladas": st.column_config.NumberColumn(width=150)
             }
         )
+        
+        # ============= PROGRESO SEMANAL VS META ESPERADA =============
+        st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)
+        st.markdown("#### 📈 Progreso Semanal vs Meta Esperada")
+        
+        df_progreso_semanal = get_progreso_semanal(mes_nombre_analisis)
+        
+        if not df_progreso_semanal.empty:
+            # Crear gráfico de comparación semanal
+            fig_semanal = go.Figure()
+            
+            # Agregar barras de meta esperada
+            fig_semanal.add_trace(go.Bar(
+                name='Meta Esperada (%)',
+                x=df_progreso_semanal['Semana'].astype(str),
+                y=df_progreso_semanal['Meta_Esperada'],
+                marker=dict(color='rgba(200, 200, 200, 0.6)'),
+                text=df_progreso_semanal['Meta_Esperada'],
+                textposition='outside',
+                hovertemplate='<b>Semana %{x}</b><br>Meta Esperada: %{y}<extra></extra>'
+            ))
+            
+            # Agregar barras de reales
+            fig_semanal.add_trace(go.Bar(
+                name='Reales',
+                x=df_progreso_semanal['Semana'].astype(str),
+                y=df_progreso_semanal['Reales'],
+                marker=dict(
+                    color=df_progreso_semanal['Cumplimiento%'],
+                    colorscale='RdYlGn',
+                    colorbar=dict(title='Cumplimiento %'),
+                    line=dict(color='white', width=2),
+                    opacity=0.8
+                ),
+                text=df_progreso_semanal['Reales'],
+                textposition='outside',
+                hovertemplate='<b>Semana %{x}</b><br>Reales: %{y}<extra></extra>'
+            ))
+            
+            fig_semanal.update_layout(
+                title=dict(
+                    text=f"Comparativa Semanal: Reales vs Meta Esperada - {mes_nombre_analisis}",
+                    font=dict(size=14, color='#1e293b', family='Arial'),
+                    x=0.5,
+                    xanchor='center'
+                ),
+                barmode='group',
+                height=450,
+                margin=dict(l=60, r=60, t=80, b=60),
+                xaxis_title="Semana del Mes",
+                yaxis_title="Cantidad de Ventas",
+                xaxis=dict(
+                    tickfont=dict(size=12, color='#64748b'),
+                    ticktext=['Sem. 1 (1-7)', 'Sem. 2 (8-14)', 'Sem. 3 (15-21)', 'Sem. 4 (22-31)'],
+                    tickvals=['1', '2', '3', '4']
+                ),
+                yaxis=dict(
+                    gridcolor='rgba(0,0,0,0.05)',
+                    showgrid=True,
+                    zeroline=False,
+                    tickfont=dict(size=11, color='#64748b'),
+                ),
+                plot_bgcolor='rgba(248, 250, 252, 0.5)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(size=11, family='Arial', color='#1e293b'),
+                legend=dict(
+                    x=1.02,
+                    y=1,
+                    xanchor='left',
+                    yanchor='top',
+                    bgcolor='rgba(255, 255, 255, 0.8)',
+                    bordercolor='#e2e8f0',
+                    borderwidth=1
+                ),
+                hovermode='x'
+            )
+            
+            st.plotly_chart(fig_semanal, use_container_width=True, config={'displayModeBar': False})
+            
+            # Mostrar tabla de progreso semanal
+            st.markdown("#### Detalle del Progreso Semanal")
+            
+            df_tabla_progreso = df_progreso_semanal[['Semana', 'Dias', 'Reales', 'Meta_Esperada', 'Cumplimiento%']].copy()
+            df_tabla_progreso.columns = ['Semana', 'Días', 'Reales', 'Meta Esperada', 'Cumplimiento %']
+            
+            # Agregar indicador de estado
+            def estado_cumplimiento(pct):
+                if pct >= 100:
+                    return '✓ En ruta'
+                elif pct >= 75:
+                    return '~ Próximo'
+                else:
+                    return '✗ Retrasado'
+            
+            df_tabla_progreso['Estado'] = df_tabla_progreso['Cumplimiento %'].apply(estado_cumplimiento)
+            
+            # Mostrar tabla con formato
+            st.dataframe(
+                df_tabla_progreso,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Semana": st.column_config.TextColumn(width=80),
+                    "Días": st.column_config.TextColumn(width=100),
+                    "Reales": st.column_config.NumberColumn(width=100),
+                    "Meta Esperada": st.column_config.NumberColumn(width=120),
+                    "Cumplimiento %": st.column_config.ProgressColumn(
+                        min_value=0,
+                        max_value=150,
+                        width=130
+                    ),
+                    "Estado": st.column_config.TextColumn(width=120)
+                }
+            )
         
         # ============= COMPARATIVA POR HORARIO: FULL TIME vs PART TIME dentro del tab1 =============
         st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
