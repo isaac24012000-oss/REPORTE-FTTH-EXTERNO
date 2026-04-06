@@ -60,8 +60,8 @@ def get_total_leads_and_conversion(mes_seleccionado="Noviembre"):
 
 @st.cache_data(ttl=3600)
 def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
-    """Calcula la conversión: Ventas Instaladas (DRIVE) / Con Cobertura (MANTRA)
-    = Transacciones INSTALADAS en DRIVE / Registros con cobertura en MANTRA"""
+    """Calcula la conversión: Ventas Del Mes (DRIVE) / Con Cobertura (MANTRA)
+    = Total de Transacciones en DRIVE / Registros con cobertura en MANTRA"""
     df_mantra = load_mantra_data()
     df_drive = load_drive_data()
     
@@ -76,15 +76,14 @@ def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
     if con_cobertura == 0:
         return 0
     
-    # Obtener Ventas INSTALADAS del DRIVE para el mes
-    # Solo contar ESTADO = 'INSTALADO' (no PENDIENTE ni CANCELADO)
-    ventas_instaladas = count_instaladas_con_regla(df_drive, None, mes_nombre=mes_seleccionado)
+    # Obtener Ventas Del Mes del DRIVE (TODAS las transacciones, no solo INSTALADO)
+    ventas_del_mes = get_ventas_del_mes_por_fecha(mes_seleccionado)
     
-    if ventas_instaladas == 0:
+    if ventas_del_mes == 0:
         return 0
     
-    # Conversión = Ventas Instaladas / Con Cobertura
-    conversion_pct = round((ventas_instaladas / con_cobertura * 100)) if con_cobertura > 0 else 0
+    # Conversión = Ventas Del Mes / Con Cobertura
+    conversion_pct = round((ventas_del_mes / con_cobertura * 100)) if con_cobertura > 0 else 0
     return conversion_pct
 
 @st.cache_data(ttl=3600)
