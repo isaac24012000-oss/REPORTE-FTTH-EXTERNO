@@ -2292,29 +2292,25 @@ if asesor_seleccionado == "Todos":
         # Efectividad - Nueva fórmula: Contrato OK / Con Cobertura (de MANTRA)
         efectividad_mes = get_conversion_mantra_mes(mes)
         
-        # Ventas generales (total de todas las transacciones)
-        ventas_generales = get_ventas_generales_mes(mes)
-        
-        # Cumplimiento - Ventas Generales / Meta Global
+        # Cumplimiento - calcular contra TODAS las metas del mes
         df_lista = load_lista_metas()
         df_mes_metas = df_lista[df_lista['Mes'] == mes]
         total_metas = df_mes_metas['Meta'].sum()
-        cumplimiento_total = round((ventas_generales / total_metas * 100)) if total_metas > 0 else 0
+        cumplimiento_total = round((ventas_total / total_metas * 100)) if total_metas > 0 else 0
         
-        # % Conversión Total = Ventas Del Mes / Leads
-        conversion_total = round((total_conversion_excel / total_leads_excel * 100)) if total_leads_excel > 0 else 0
+        # Ventas generales (total de todas las transacciones)
+        ventas_generales = get_ventas_generales_mes(mes)
     else:
         ventas_total = 0
         efectividad_mes = 0
         cumplimiento_total = 0
         ventas_generales = 0
-        conversion_total = 0
     
     kpis = [
         (f"{total_leads_excel:,}", "📋 Leads", col1),
         (str(get_con_cobertura_count(mes)), "🌐 Con Cobertura", col2),
         (f"{total_conversion_excel}", "✅ Ventas Del Mes", col3),
-        (f"{conversion_total}%", "📊 % Conversión Total", col4),
+        (str(ventas_total), "💰 Ventas Instaladas Del Mes", col4),
         (str(ventas_generales), "📈 Ventas Generales Del Mes", col5),
         (f"{efectividad_mes}%", "⭐ Conversión de Ventas", col6),
         (f"{cumplimiento_total}%", "🎯 Cumplimiento", col7),
