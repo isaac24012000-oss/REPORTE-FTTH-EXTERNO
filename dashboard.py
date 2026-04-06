@@ -2624,13 +2624,9 @@ condicion_fulltime = (df_detail['Meta'] >= 55) | (df_detail['Asesor'].isin(aseso
 df_fulltime = df_detail[condicion_fulltime].copy()
 df_parttime = df_detail[~condicion_fulltime].copy()
 
-# Ordenar por el criterio seleccionado
-if criterio_orden == "Conversión (Mayor a Menor)":
-    df_fulltime = df_fulltime.sort_values('Efectividad', ascending=False).reset_index(drop=True)
-    df_parttime = df_parttime.sort_values('Efectividad', ascending=False).reset_index(drop=True)
-else:
-    df_fulltime = df_fulltime.sort_values('Cumplimiento', ascending=False).reset_index(drop=True)
-    df_parttime = df_parttime.sort_values('Cumplimiento', ascending=False).reset_index(drop=True)
+# Ordenar SIEMPRE por Conversión (Efectividad) de mayor a menor
+df_fulltime = df_fulltime.sort_values('Efectividad', ascending=False).reset_index(drop=True)
+df_parttime = df_parttime.sort_values('Efectividad', ascending=False).reset_index(drop=True)
 
 # Función para generar tabla HTML
 def generar_tabla_detalle(df_tabla, tipo_empleado):
@@ -2658,12 +2654,12 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
         cumpl = int(row['Cumplimiento'])
         efect = int(row['Efectividad'])
         
-        # Determinar estado
-        if cumpl >= 70:
+        # Determinar estado basado en CONVERSIÓN (Efectividad)
+        if efect > 70:
             estado = '<span class="status-excellent">✓ Excelente</span>'
             fila_bg = 'background-color: #f0fdf4;'
-        elif cumpl >= 50:
-            estado = '<span class="status-good">~ Bueno</span>'
+        elif efect >= 50:
+            estado = '<span class="status-good">~ Regular</span>'
             fila_bg = 'background-color: #fffbeb;'
         else:
             estado = '<span class="status-poor">✗ Bajo</span>'
