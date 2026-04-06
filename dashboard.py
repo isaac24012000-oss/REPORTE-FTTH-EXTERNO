@@ -2118,34 +2118,27 @@ total_conversion_excel = get_ventas_del_mes_por_fecha(mes)
 
 # KPI Cards mejorados - Datos del asesor seleccionado o totales
 def get_cumplimiento_total_mes(mes_nombre):
-    """Calcula el cumplimiento total del mes: (Instaladas / 680) * 100
-    Donde 680 es la meta global del mes"""
+    """Calcula el cumplimiento total del mes: (Ventas Generales / Meta Global) * 100
+    Donde Meta Global = suma de todas las metas individuales"""
     df_drive = load_drive_data()
+    df_lista = load_lista_metas()
     
-    if df_drive is None or df_drive.empty:
+    if df_drive is None or df_drive.empty or df_lista is None or df_lista.empty:
         return 0
     
     try:
-        # Mapear nombre del mes a número
-        mes_numeros = {
-            'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
-            'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
-            'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
-        }
-        mes_num = mes_numeros.get(mes_nombre)
+        # Obtener meta global: suma de todas las metas del mes
+        df_mes_lista = df_lista[df_lista['Mes'] == mes_nombre]
+        meta_global = df_mes_lista['Meta'].sum()
         
-        if mes_num is None:
+        if meta_global == 0:
             return 0
         
-        # Aplicar regla: INSTALADO - pasando mes_nombre para filtrar por MES column
-        es_noviembre = mes_num == 11
-        total_instaladas = count_instaladas_con_regla(df_drive, mes_num, es_noviembre, mes_nombre)
+        # Obtener Ventas Generales del mes
+        ventas_generales = get_ventas_generales_mes(mes_nombre)
         
-        # Meta global fija: 680
-        meta_global = 680
-        
-        # Calcular cumplimiento: (Instaladas / Meta Global) * 100
-        cumplimiento_total = round((total_instaladas / meta_global * 100))
+        # Calcular cumplimiento: (Ventas Generales / Meta Global) * 100
+        cumplimiento_total = round((ventas_generales / meta_global * 100))
         
         return cumplimiento_total
     except Exception as e:
