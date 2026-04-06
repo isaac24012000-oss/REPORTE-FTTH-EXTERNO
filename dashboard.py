@@ -2300,17 +2300,21 @@ if asesor_seleccionado == "Todos":
         df_mes_metas = df_lista[df_lista['Mes'] == mes]
         total_metas = df_mes_metas['Meta'].sum()
         cumplimiento_total = round((ventas_generales / total_metas * 100)) if total_metas > 0 else 0
+        
+        # % Conversión Total = Ventas Del Mes / Leads
+        conversion_total = round((total_conversion_excel / total_leads_excel * 100)) if total_leads_excel > 0 else 0
     else:
         ventas_total = 0
         efectividad_mes = 0
         cumplimiento_total = 0
         ventas_generales = 0
+        conversion_total = 0
     
     kpis = [
         (f"{total_leads_excel:,}", "📋 Leads", col1),
         (str(get_con_cobertura_count(mes)), "🌐 Con Cobertura", col2),
         (f"{total_conversion_excel}", "✅ Ventas Del Mes", col3),
-        (str(ventas_total), "💰 Ventas Instaladas Del Mes", col4),
+        (f"{conversion_total}%", "📊 % Conversión Total", col4),
         (str(ventas_generales), "📈 Ventas Generales Del Mes", col5),
         (f"{efectividad_mes}%", "⭐ Conversión de Ventas", col6),
         (f"{cumplimiento_total}%", "🎯 Cumplimiento", col7),
