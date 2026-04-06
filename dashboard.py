@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# Actualizado 02/03/2026 - Preparado para MARZO 2026
+# Actualizado 06/04/2026 - Preparado para ABRIL 2026
 
 # ============= CARGA DE DATOS DEL EXCEL =============
 
@@ -1825,7 +1825,7 @@ st.markdown("### ⚙️ Filtros y Opciones")
 col_filtros = st.columns(3, gap="medium")
 
 with col_filtros[0]:
-    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo"], index=4)
+    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril"], index=5)
 
 # Mapeo de meses a años
 mes_año_map = {
@@ -1833,7 +1833,8 @@ mes_año_map = {
     "Diciembre": "Diciembre 2025",
     "Enero": "Enero 2026",
     "Febrero": "Febrero 2026",
-    "Marzo": "Marzo 2026"
+    "Marzo": "Marzo 2026",
+    "Abril": "Abril 2026"
 }
 
 # Header mejorado - Dinámico
