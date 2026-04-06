@@ -807,6 +807,95 @@ def get_progreso_semanal(mes_seleccionado="Abril"):
     return df_resultado
 
 @st.cache_data(ttl=3600)
+def get_semana_actual():
+    """Determina qué semana es hoy dentro del mes actual"""
+    hoy = pd.Timestamp.today()
+    dia = hoy.day
+    
+    if dia <= 7:
+        return 1, '1-7'
+    elif dia <= 14:
+        return 2, '8-14'
+    elif dia <= 21:
+        return 3, '15-21'
+    else:
+        return 4, '22-31'
+
+@st.cache_data(ttl=3600)
+def get_cumplimiento_asesor_semana_actual(asesor, meta_mensual, mes_seleccionado="Abril"):
+    """Obtiene el cumplimiento del asesor para LA SEMANA ACTUAL.
+    Calcula: (Ventas reales en semana / Meta esperada para esa semana) × 100
+    
+    Meta esperada por semana:
+    - Semana 1: 25% de la meta mensual
+    - Semana 2: 50% de la meta mensual (acumulado)
+    - Semana 3: 75% de la meta mensual (acumulado)
+    - Semana 4: 100% de la meta mensual (acumulado)
+    """
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty or meta_mensual <= 0:
+        return 0
+    
+    # Obtener semana actual
+    semana_num, rango_dias = get_semana_actual()
+    
+    # Limpiar espacios en asesor
+    df_drive['ASESOR'] = df_drive['ASESOR'].astype(str).str.strip()
+    asesor_clean = asesor.strip()
+    
+    # Obtener nombres alternativos
+    nombres_alternativos = get_nombres_alternativos(asesor_clean)
+    
+    # Convertir FECHA a datetime
+    df_temp = df_drive.copy()
+    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
+    df_temp = df_temp[df_temp['FECHA'].notna()]
+    
+    # Mapeo de meses
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    if mes_num is None:
+        return 0
+    
+    # Filtra por mes y asesor (solo INSTALADO)
+    df_temp['FECHA_MES'] = df_temp['FECHA'].dt.month
+    df_temp['FECHA_DIA'] = df_temp['FECHA'].dt.day
+    df_temp['ESTADO'] = df_temp['ESTADO'].astype(str).str.strip()
+    
+    df_asesor_mes = df_temp[
+        (df_temp['FECHA_MES'] == mes_num) &
+        (df_temp['ASESOR'].isin(nombres_alternativos)) &
+        (df_temp['ESTADO'] == 'INSTALADO')
+    ]
+    
+    if df_asesor_mes.empty:
+        return 0
+    
+    # Contar ventas en la semana actual
+    if semana_num == 1:
+        ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 7])
+        meta_esperada = round(meta_mensual * 0.25)
+    elif semana_num == 2:
+        ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 14])
+        meta_esperada = round(meta_mensual * 0.50)
+    elif semana_num == 3:
+        ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 21])
+        meta_esperada = round(meta_mensual * 0.75)
+    else:  # semana 4
+        ventas_semana = len(df_asesor_mes[df_asesor_mes['FECHA_DIA'] <= 31])
+        meta_esperada = round(meta_mensual * 1.00)
+    
+    # Calcular cumplimiento%
+    cumplimiento_pct = int((ventas_semana / meta_esperada * 100)) if meta_esperada > 0 else 0
+    
+    return cumplimiento_pct
+
+@st.cache_data(ttl=3600)
 def get_nombres_alternativos(asesor):
     """Obtiene múltiples variantes del nombre del asesor para búsqueda flexible"""
     nombres = [asesor.strip()]
@@ -2823,10 +2912,23 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
         instaladas = int(row['Instaladas'])
         canceladas = int(row['Canceladas'])
         pendientes = int(row.get('Pendientes', 0)) if mostrar_pendientes else 0
-        cumpl = int(row['Cumplimiento'])
         efect = int(row['Efectividad'])
         
-        # Determinar estado basado en CONVERSIÓN (Efectividad)
+        # Calcular CUMPL% para la semana actual basado en la meta individual
+        cumpl_semana = get_cumplimiento_asesor_semana_actual(asesor, meta, mes)
+        
+        # Determinar estado y color basado en cumplimiento semanal
+        if cumpl_semana >= 100:
+            cumpl_color = '#10b981'  # Verde - Excelente
+            cumpl_bg_color = 'rgba(16, 185, 129, 0.2)'
+        elif cumpl_semana >= 60:
+            cumpl_color = '#f59e0b'  # Naranja - Regular
+            cumpl_bg_color = 'rgba(245, 158, 11, 0.2)'
+        else:
+            cumpl_color = '#ef4444'  # Rojo - Crítico
+            cumpl_bg_color = 'rgba(239, 68, 68, 0.2)'
+        
+        # Determinar estado general basado en CONVERSIÓN (Efectividad)
         if efect > 70:
             estado = '<span class="status-excellent">✓ Excelente</span>'
             fila_bg = 'background-color: #f0fdf4;'
@@ -2847,7 +2949,7 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
                 <td style="text-align: center; font-weight: 600; color: #10b981;">{instaladas}</td>
                 <td style="text-align: center; font-weight: 600; color: #ef4444;">{canceladas}</td>
                 <td style="text-align: center; font-weight: 600; color: #f59e0b;">{pendientes}</td>
-                <td style="text-align: center;"><div class="meta-valor">{cumpl}%</div></td>
+                <td style="text-align: center; background-color: {cumpl_bg_color}; border-radius: 4px; color: {cumpl_color}; font-weight: 700;"><div class="meta-valor" style="background: none; color: {cumpl_color};">{cumpl_semana}%</div></td>
                 <td style="text-align: center;"><div class="meta-valor" style="background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);">{efect}%</div></td>
                 <td style="text-align: center;">{estado}</td>
             </tr>'''
@@ -2860,7 +2962,7 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
                 <td style="text-align: center; font-weight: 600;">{meta}</td>
                 <td style="text-align: center; font-weight: 600; color: #10b981;">{instaladas}</td>
                 <td style="text-align: center; font-weight: 600; color: #ef4444;">{canceladas}</td>
-                <td style="text-align: center;"><div class="meta-valor">{cumpl}%</div></td>
+                <td style="text-align: center; background-color: {cumpl_bg_color}; border-radius: 4px; color: {cumpl_color}; font-weight: 700;"><div class="meta-valor" style="background: none; color: {cumpl_color};">{cumpl_semana}%</div></td>
                 <td style="text-align: center;"><div class="meta-valor" style="background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);">{efect}%</div></td>
                 <td style="text-align: center;">{estado}</td>
             </tr>'''
