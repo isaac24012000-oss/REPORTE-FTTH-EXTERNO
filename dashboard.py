@@ -2292,14 +2292,14 @@ if asesor_seleccionado == "Todos":
         # Efectividad - Nueva fórmula: Contrato OK / Con Cobertura (de MANTRA)
         efectividad_mes = get_conversion_mantra_mes(mes)
         
-        # Cumplimiento - calcular contra TODAS las metas del mes
+        # Ventas generales (total de todas las transacciones)
+        ventas_generales = get_ventas_generales_mes(mes)
+        
+        # Cumplimiento - Ventas Generales / Meta Global
         df_lista = load_lista_metas()
         df_mes_metas = df_lista[df_lista['Mes'] == mes]
         total_metas = df_mes_metas['Meta'].sum()
-        cumplimiento_total = round((ventas_total / total_metas * 100)) if total_metas > 0 else 0
-        
-        # Ventas generales (total de todas las transacciones)
-        ventas_generales = get_ventas_generales_mes(mes)
+        cumplimiento_total = round((ventas_generales / total_metas * 100)) if total_metas > 0 else 0
     else:
         ventas_total = 0
         efectividad_mes = 0
