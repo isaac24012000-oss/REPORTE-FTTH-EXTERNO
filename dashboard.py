@@ -1250,6 +1250,12 @@ def load_data(mes_seleccionado=None):
     df = pd.DataFrame(data)
     df['% Meta Alcanzado'] = (df['Cumplimiento'] / 100 * 100).astype(int)
     df['Diferencia'] = df['Cumplimiento'] - 100
+    
+    # Excluir agentes específicos por mes
+    if mes_seleccionado == 'Abril':
+        # Excluir ZIM_KATHERINEMM_VTP de Abril
+        df = df[df['Asesor'] != 'ZIM_KATHERINEMM_VTP'].reset_index(drop=True)
+    
     return df
 
 @st.cache_data(ttl=3600)
@@ -1371,6 +1377,13 @@ def load_data_codigo_carga(mes_seleccionado=None):
     
     # Agregar posición
     df_resultado.insert(0, 'POS', range(1, len(df_resultado) + 1))
+    
+    # Excluir agentes específicos por mes
+    if mes_seleccionado == 'Abril':
+        # Excluir ZIM_KATHERINEMM_VTP de Abril
+        df_resultado = df_resultado[df_resultado['CODIGO_CARGA'] != 'ZIM_KATHERINEMM_VTP'].reset_index(drop=True)
+        # Recalcular posición después de filtrar
+        df_resultado['POS'] = range(1, len(df_resultado) + 1)
     
     return df_resultado
 
