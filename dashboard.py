@@ -3286,6 +3286,41 @@ if not df_mantra_mes.empty:
             key="nivel3_filtro_casos"
         )
     
+    # Segunda fila de filtros - Fechas
+    col_fecha1, col_fecha2 = st.columns(2, gap="small")
+    
+    # Preparar datos de fecha
+    fecha_filtrada = df_mantra_mes.copy()
+    if 'FECHA' in fecha_filtrada.columns or 'Fecha' in fecha_filtrada.columns:
+        # Detectar columna de fecha
+        col_fecha = 'FECHA' if 'FECHA' in fecha_filtrada.columns else 'Fecha'
+        fecha_filtrada[col_fecha] = pd.to_datetime(fecha_filtrada[col_fecha], errors='coerce')
+        
+        # Obtener rango de fechas disponibles
+        fecha_min = fecha_filtrada[col_fecha].min()
+        fecha_max = fecha_filtrada[col_fecha].max()
+        
+        with col_fecha1:
+            fecha_inicio = st.date_input(
+                "Fecha Inicio",
+                value=fecha_min,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="fecha_inicio_casos"
+            )
+        
+        with col_fecha2:
+            fecha_fin = st.date_input(
+                "Fecha Fin",
+                value=fecha_max,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="fecha_fin_casos"
+            )
+    else:
+        fecha_inicio = None
+        fecha_fin = None
+    
     # Aplicar todos los filtros
     df_filtrado = df_mantra_mes.copy()
     
@@ -3300,6 +3335,16 @@ if not df_mantra_mes.empty:
     
     if nivel3_filtro:
         df_filtrado = df_filtrado[df_filtrado['NIVEL 3'].isin(nivel3_filtro)]
+    
+    # Aplicar filtro de fechas si existen
+    if fecha_inicio is not None and fecha_fin is not None:
+        col_fecha = 'FECHA' if 'FECHA' in df_filtrado.columns else 'Fecha'
+        if col_fecha in df_filtrado.columns:
+            df_filtrado[col_fecha] = pd.to_datetime(df_filtrado[col_fecha], errors='coerce')
+            df_filtrado = df_filtrado[
+                (df_filtrado[col_fecha] >= pd.Timestamp(fecha_inicio)) &
+                (df_filtrado[col_fecha] <= pd.Timestamp(fecha_fin))
+            ]
     
     # Mostrar total de casos filtrados
     total_casos_filtrados = len(df_filtrado)
