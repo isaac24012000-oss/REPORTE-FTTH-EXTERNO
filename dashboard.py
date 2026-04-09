@@ -3229,7 +3229,11 @@ if not df_mantra_mes.empty:
         df_temp = df_mantra_mes[df_mantra_mes['Agente'] == agente_filtro]
     
     with col2:
-        nivel1_unique = sorted(df_temp['NIVEL 1'].unique())
+        if not df_temp.empty and 'NIVEL 1' in df_temp.columns:
+            nivel1_unique = sorted(df_temp['NIVEL 1'].unique())
+        else:
+            nivel1_unique = []
+        
         nivel1_filtro = st.selectbox(
             "Nivel 1",
             ["Todos"] + list(nivel1_unique),
@@ -3240,10 +3244,17 @@ if not df_mantra_mes.empty:
     if nivel1_filtro == "Todos":
         df_temp2 = df_temp.copy()
     else:
-        df_temp2 = df_temp[df_temp['NIVEL 1'] == nivel1_filtro]
+        if not df_temp.empty:
+            df_temp2 = df_temp[df_temp['NIVEL 1'] == nivel1_filtro]
+        else:
+            df_temp2 = pd.DataFrame()
     
     with col3:
-        nivel2_unique = sorted(df_temp2['NIVEL 2'].unique())
+        if not df_temp2.empty and 'NIVEL 2' in df_temp2.columns:
+            nivel2_unique = sorted(df_temp2['NIVEL 2'].unique())
+        else:
+            nivel2_unique = []
+        
         nivel2_filtro = st.selectbox(
             "Nivel 2",
             ["Todos"] + list(nivel2_unique),
@@ -3254,10 +3265,17 @@ if not df_mantra_mes.empty:
     if nivel2_filtro == "Todos":
         df_temp3 = df_temp2.copy()
     else:
-        df_temp3 = df_temp2[df_temp2['NIVEL 2'] == nivel2_filtro]
+        if not df_temp2.empty:
+            df_temp3 = df_temp2[df_temp2['NIVEL 2'] == nivel2_filtro]
+        else:
+            df_temp3 = pd.DataFrame()
     
     with col4:
-        nivel3_unique = sorted(df_temp3['NIVEL 3'].unique())
+        if not df_temp3.empty and 'NIVEL 3' in df_temp3.columns:
+            nivel3_unique = sorted(df_temp3['NIVEL 3'].unique())
+        else:
+            nivel3_unique = []
+        
         nivel3_filtro = st.multiselect(
             "Nivel 3",
             list(nivel3_unique),
