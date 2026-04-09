@@ -3230,7 +3230,8 @@ if not df_mantra_mes.empty:
     
     with col2:
         if not df_temp.empty and 'NIVEL 1' in df_temp.columns:
-            nivel1_unique = sorted(df_temp['NIVEL 1'].unique())
+            nivel1_values = df_temp['NIVEL 1'].dropna().unique()
+            nivel1_unique = sorted([str(x).strip() for x in nivel1_values if str(x).strip() and str(x).lower() != 'nan'])
         else:
             nivel1_unique = []
         
@@ -3251,7 +3252,8 @@ if not df_mantra_mes.empty:
     
     with col3:
         if not df_temp2.empty and 'NIVEL 2' in df_temp2.columns:
-            nivel2_unique = sorted(df_temp2['NIVEL 2'].unique())
+            nivel2_values = df_temp2['NIVEL 2'].dropna().unique()
+            nivel2_unique = sorted([str(x).strip() for x in nivel2_values if str(x).strip() and str(x).lower() != 'nan'])
         else:
             nivel2_unique = []
         
@@ -3272,7 +3274,8 @@ if not df_mantra_mes.empty:
     
     with col4:
         if not df_temp3.empty and 'NIVEL 3' in df_temp3.columns:
-            nivel3_unique = sorted(df_temp3['NIVEL 3'].unique())
+            nivel3_values = df_temp3['NIVEL 3'].dropna().unique()
+            nivel3_unique = sorted([str(x).strip() for x in nivel3_values if str(x).strip() and str(x).lower() != 'nan'])
         else:
             nivel3_unique = []
         
