@@ -1371,8 +1371,8 @@ def load_data_codigo_carga(mes_seleccionado=None):
             df_agente = df_drive_mes[df_drive_mes['CODIGO DE CARGA'] == agente]
             
             if not df_agente.empty:
-                # VENTAS = todos los registros sin importar PAGO o ESTADO
-                ventas = len(df_agente)
+                # VENTAS = registros con ESTADO='INSTALADO' (las que realmente se concretan)
+                ventas = len(df_agente[df_agente['ESTADO'] == 'INSTALADO'])
                 
                 # PENDIENTES = registros con ESTADO='PENDIENTE'
                 pendientes = len(df_agente[df_agente['ESTADO'] == 'PENDIENTE'])
