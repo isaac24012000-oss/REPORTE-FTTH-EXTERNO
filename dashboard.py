@@ -988,7 +988,7 @@ def get_con_cobertura_asesor_mes(asesor, mes_seleccionado="Enero"):
     return con_cobertura
 
 def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
-    """Calcula la conversión por asesor: Transacciones INSTALADAS en DRIVE / Con Cobertura (de MANTRA)"""
+    """Calcula la conversión por asesor: Transacciones INSTALADAS en DRIVE / Total de Leads (MANTRA)"""
     df_drive = load_drive_data()
     df_mantra = load_mantra_data()
     
@@ -1017,7 +1017,7 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     df_mes_drive['ESTADO'] = df_mes_drive['ESTADO'].astype(str).str.strip()
     transacciones_pago = len(df_mes_drive[df_mes_drive['ESTADO'] == 'INSTALADO'])
     
-    # ========= CONTAR CON COBERTURA EN MANTRA =========
+    # ========= CONTAR TOTAL DE LEADS EN MANTRA =========
     # Limpiar espacios en los nombres de asesor en MANTRA
     df_mantra['Agente'] = df_mantra['Agente'].astype(str).str.strip()
     
@@ -1035,17 +1035,14 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     if df_mes_mantra is None or df_mes_mantra.empty:
         return 0
     
-    # Limpiar NIVEL 2
-    df_mes_mantra['NIVEL 2'] = df_mes_mantra['NIVEL 2'].astype(str).str.strip()
+    # Total de leads del asesor en MANTRA para el mes
+    total_leads = len(df_mes_mantra)
     
-    # Contar "Con Cobertura"
-    con_cobertura = len(df_mes_mantra[df_mes_mantra['NIVEL 2'] == 'Con Cobertura'])
-    
-    if con_cobertura == 0:
+    if total_leads == 0:
         return 0
     
-    # Conversión = Transacciones INSTALADAS / Con Cobertura
-    conversion_pct = round((transacciones_pago / con_cobertura * 100)) if con_cobertura > 0 else 0
+    # Conversión = Transacciones INSTALADAS / Total de Leads
+    conversion_pct = round((transacciones_pago / total_leads * 100)) if total_leads > 0 else 0
     return conversion_pct
 
 @st.cache_data(ttl=3600)
