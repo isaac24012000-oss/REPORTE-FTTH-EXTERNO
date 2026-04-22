@@ -1021,14 +1021,15 @@ def get_ventas_asesor_mes(asesor, mes_seleccionado="Enero"):
     return total_ventas
 
 def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
-    """Calcula la conversión por asesor: Transacciones INSTALADAS en DRIVE / Con Cobertura (de MANTRA)"""
+    """Calcula la conversión por asesor: Transacciones CON PAGO en DRIVE / Con Cobertura (de MANTRA)
+    Cuenta todas las transacciones (INSTALADAS + CANCELADAS) que tengan PAGO"""
     df_drive = load_drive_data()
     df_mantra = load_mantra_data()
     
     if df_drive is None or df_drive.empty or df_mantra is None or df_mantra.empty:
         return 0
     
-    # ========= CONTAR INSTALADAS EN DRIVE =========
+    # ========= CONTAR PAGO EN DRIVE =========
     # Filtrar DRIVE por mes y asesor
     df_drive_temp = df_drive.copy()
     df_drive_temp['ASESOR'] = df_drive_temp['ASESOR'].astype(str).str.strip()
@@ -1046,9 +1047,14 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     if df_mes_drive.empty:
         return 0
     
-    # Contar transacciones INSTALADAS
-    df_mes_drive['ESTADO'] = df_mes_drive['ESTADO'].astype(str).str.strip()
-    transacciones_pago = len(df_mes_drive[df_mes_drive['ESTADO'] == 'INSTALADO'])
+    # Contar transacciones con PAGO (sin importar ESTADO)
+    # PAGO = cualquier valor que NO sea null/NaN/vacío
+    df_mes_drive['PAGO'] = df_mes_drive['PAGO'].astype(str).str.strip()
+    transacciones_pago = len(df_mes_drive[
+        (df_mes_drive['PAGO'] != '') & 
+        (df_mes_drive['PAGO'] != 'nan') &
+        (df_mes_drive['PAGO'].notna())
+    ])
     
     # ========= CONTAR CON COBERTURA EN MANTRA =========
     # Limpiar espacios en los nombres de asesor en MANTRA
@@ -1077,7 +1083,7 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     if con_cobertura == 0:
         return 0
     
-    # Conversión = Transacciones INSTALADAS / Con Cobertura
+    # Conversión = Transacciones con PAGO / Con Cobertura
     conversion_pct = round((transacciones_pago / con_cobertura * 100)) if con_cobertura > 0 else 0
     return conversion_pct
 
