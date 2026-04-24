@@ -1617,17 +1617,23 @@ def get_crecimiento_ventas(asesor, mes_seleccionado="Marzo"):
 
 @st.cache_data(ttl=3600)
 def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
-    """Obtiene el crecimiento acumulado agrupado por semana (DO-LU-MA-MI-JU-VI-SA) con promedio"""
+    """Obtiene el conteo de PAGO (sin importar estado) agrupado por semana"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
         return pd.DataFrame()
     
     df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
-    df_asesor['ESTADO'] = df_asesor['ESTADO'].astype(str).str.strip()
+    df_asesor['PAGO'] = df_asesor['PAGO'].astype(str).str.strip()
+    
+    # Filtrar solo registros con PAGO (no vacío)
+    df_con_pago = df_asesor[(df_asesor['PAGO'] != '') & (df_asesor['PAGO'] != 'nan') & (df_asesor['PAGO'].notna())]
+    
+    if df_con_pago.empty:
+        return pd.DataFrame()
     
     # Calcular número de semana basado en el día del mes (semana 1: 1-7, semana 2: 8-14, etc.)
-    df_asesor['NUM_SEMANA'] = ((df_asesor['FECHA'].dt.day - 1) // 7) + 1
+    df_con_pago['NUM_SEMANA'] = ((df_con_pago['FECHA'].dt.day - 1) // 7) + 1
     
     # Crear etiqueta descriptiva para cada semana
     def get_semana_label(row):
@@ -1641,28 +1647,14 @@ def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
         else:
             return f"Semana 4 (22-31)"
     
-    df_asesor['LABEL_SEMANA'] = df_asesor.apply(get_semana_label, axis=1)
+    df_con_pago['LABEL_SEMANA'] = df_con_pago.apply(get_semana_label, axis=1)
     
-    # Contar ventas semanales por tipo
-    ventas_semanales = df_asesor.groupby(['NUM_SEMANA', 'LABEL_SEMANA', 'ESTADO']).size().unstack(fill_value=0)
+    # Contar total de PAGO por semana
+    pagos_semanales = df_con_pago.groupby(['NUM_SEMANA', 'LABEL_SEMANA']).size().reset_index(name='TOTAL')
     
-    # Calcular acumuladas
     crecimiento_semanal = pd.DataFrame()
-    crecimiento_semanal['Semana'] = ventas_semanales.index.get_level_values('LABEL_SEMANA')
-    
-    # Usar columnas si existen, sino 0
-    instaladas = ventas_semanales['INSTALADO'].values if 'INSTALADO' in ventas_semanales.columns else np.zeros(len(ventas_semanales))
-    canceladas = ventas_semanales['CANCELADO'].values if 'CANCELADO' in ventas_semanales.columns else np.zeros(len(ventas_semanales))
-    pendientes = ventas_semanales['PENDIENTE'].values if 'PENDIENTE' in ventas_semanales.columns else np.zeros(len(ventas_semanales))
-    
-    crecimiento_semanal['TOTAL'] = instaladas + canceladas + pendientes
-    crecimiento_semanal['Instaladas'] = instaladas
-    crecimiento_semanal['Canceladas'] = canceladas
-    crecimiento_semanal['Pendientes'] = pendientes
-    
-    # Calcular acumuladas
-    crecimiento_semanal['Total Acumulado'] = crecimiento_semanal['TOTAL'].cumsum()
-    crecimiento_semanal['Instaladas Acumuladas'] = crecimiento_semanal['Instaladas'].cumsum()
+    crecimiento_semanal['Semana'] = pagos_semanales['LABEL_SEMANA'].values
+    crecimiento_semanal['TOTAL'] = pagos_semanales['TOTAL'].values
     
     # Calcular promedio semanal
     promedio_semanal = crecimiento_semanal['TOTAL'].mean()
@@ -3669,43 +3661,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
             df_crecimiento_semanal = get_crecimiento_ventas_semanal(asesor_seleccionado, mes)
             
             if not df_crecimiento_semanal.empty:
-                # Gráfico de línea de crecimiento semanal acumulado
-                fig_crecimiento_semanal = go.Figure()
-                
-                # Línea de total acumulado semanal
-                fig_crecimiento_semanal.add_trace(go.Scatter(
-                    x=df_crecimiento_semanal['Semana'],
-                    y=df_crecimiento_semanal['Total Acumulado'],
-                    mode='lines+markers',
-                    name='Total Acumulado',
-                    line=dict(color='#1976d2', width=3),
-                    marker=dict(size=10)
-                ))
-                
-                # Línea de instaladas acumuladas semanal
-                fig_crecimiento_semanal.add_trace(go.Scatter(
-                    x=df_crecimiento_semanal['Semana'],
-                    y=df_crecimiento_semanal['Instaladas Acumuladas'],
-                    mode='lines+markers',
-                    name='Instaladas Acumuladas',
-                    line=dict(color='#4caf50', width=2, dash='dash'),
-                    marker=dict(size=8)
-                ))
-                
-                fig_crecimiento_semanal.update_layout(
-                    title=f"Crecimiento Acumulado de Ventas por Semana - {mes}",
-                    xaxis_title="Semana",
-                    yaxis_title="Cantidad Acumulada",
-                    height=400,
-                    hovermode='x unified',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
-                )
-                
-                st.plotly_chart(fig_crecimiento_semanal, use_container_width=True)
-                
-                # Gráfico de barras: Desempeño semanal vs promedio
+                # Gráfico de barras: Conteo de PAGO por semana
                 promedio_semanal = df_crecimiento_semanal['TOTAL'].mean()
                 colores_barras_sem = ['#4caf50' if x >= promedio_semanal else '#ff6b6b' for x in df_crecimiento_semanal['TOTAL']]
                 
@@ -3714,7 +3670,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                         x=df_crecimiento_semanal['Semana'],
                         y=df_crecimiento_semanal['TOTAL'],
                         marker=dict(color=colores_barras_sem),
-                        name='Ventas de la Semana',
+                        name='PAGO por Semana',
                         text=df_crecimiento_semanal['TOTAL'],
                         textposition='auto'
                     )
@@ -3730,9 +3686,9 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                 )
                 
                 fig_desempeño_sem.update_layout(
-                    title=f"Desempeño Semanal vs Promedio - {mes}",
+                    title=f"Conteo de PAGO por Semana - {mes} ({asesor_seleccionado})",
                     xaxis_title="Semana",
-                    yaxis_title="Ventas de la Semana",
+                    yaxis_title="Cantidad de PAGO",
                     height=400,
                     hovermode='x unified',
                     plot_bgcolor='rgba(0,0,0,0)',
@@ -3743,13 +3699,10 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                 
                 st.plotly_chart(fig_desempeño_sem, use_container_width=True)
                 
-                # Mostrar indicadores de crecimiento semanal
-                if len(df_crecimiento_semanal) > 1:
-                    inicio_sem = df_crecimiento_semanal['Total Acumulado'].iloc[0]
-                    fin_sem = df_crecimiento_semanal['Total Acumulado'].iloc[-1]
-                    crecimiento_total_sem = fin_sem - inicio_sem
-                    semanas_trabajadas = len(df_crecimiento_semanal)
-                    crecimiento_promedio_semanal = crecimiento_total_sem / semanas_trabajadas if semanas_trabajadas > 0 else 0
+                # Mostrar indicadores semanal
+                if len(df_crecimiento_semanal) > 0:
+                    total_pagos = df_crecimiento_semanal['TOTAL'].sum()
+                    semanas_con_datos = len(df_crecimiento_semanal)
                     
                     # Velocidad más reciente (última semana)
                     velocidad_semana_actual = df_crecimiento_semanal['TOTAL'].iloc[-1]
@@ -3760,20 +3713,20 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     
                     col_sem1, col_sem2, col_sem3 = st.columns(3)
                     with col_sem1:
-                        st.metric("Crecimiento Total", f"+{crecimiento_total_sem:.0f} ventas")
+                        st.metric("Total de PAGO", f"{total_pagos:.0f}")
                     with col_sem2:
-                        st.metric("Promedio Semanal", f"{promedio_semanal:.1f} ventas/semana")
+                        st.metric("Promedio por Semana", f"{promedio_semanal:.1f} PAGO/semana")
                     with col_sem3:
-                        st.metric("Semana Actual", f"{velocidad_semana_actual:.0f} ventas")
+                        st.metric("Semana Actual", f"{velocidad_semana_actual:.0f} PAGO")
                     
                     # Segunda fila de métricas
                     col_sem4, col_sem5 = st.columns(2)
                     with col_sem4:
-                        st.metric("🟢 Semanas Arriba del Promedio", f"{semanas_arriba}/{semanas_trabajadas}")
+                        st.metric("🟢 Semanas Arriba del Promedio", f"{semanas_arriba}/{semanas_con_datos}")
                     with col_sem5:
-                        st.metric("🔴 Semanas Bajo el Promedio", f"{semanas_bajo}/{semanas_trabajadas}")
+                        st.metric("🔴 Semanas Bajo el Promedio", f"{semanas_bajo}/{semanas_con_datos}")
             else:
-                st.info("No hay datos de crecimiento por semana para este mes")
+                st.info("No hay datos de PAGO por semana para este mes")
         
         # FILA 3: RECOMENDACIONES PERSONALIZADAS
         st.markdown("#### 💡 Recomendaciones Personalizadas")
