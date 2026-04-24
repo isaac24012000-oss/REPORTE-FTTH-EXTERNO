@@ -383,6 +383,64 @@ def load_lista_metas():
     except Exception as e:
         return None
 
+@st.cache_data(ttl=3600)
+def get_meses_disponibles():
+    """Obtiene dinámicamente todos los meses disponibles en los datos
+    Retorna lista de tuplas (mes_año, mes_nombre, año, mes_num)"""
+    df_mantra = load_mantra_data()
+    
+    if df_mantra is None or df_mantra.empty:
+        # Fallback a los meses por defecto
+        return [
+            ('Noviembre 2025', 'Noviembre', 2025, 11),
+            ('Diciembre 2025', 'Diciembre', 2025, 12),
+            ('Enero 2026', 'Enero', 2026, 1),
+            ('Febrero 2026', 'Febrero', 2026, 2)
+        ]
+    
+    # Obtener meses únicos
+    meses_unicos = df_mantra['Mes'].dropna().unique().tolist()
+    
+    if not meses_unicos:
+        return [
+            ('Noviembre 2025', 'Noviembre', 2025, 11),
+            ('Diciembre 2025', 'Diciembre', 2025, 12),
+            ('Enero 2026', 'Enero', 2026, 1),
+            ('Febrero 2026', 'Febrero', 2026, 2)
+        ]
+    
+    # Orden correcto de meses
+    orden_meses = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
+    
+    # Mapeo de meses a números
+    mes_num_map = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    
+    # Filtrar y ordenar meses según el orden correcto
+    meses_ordenados = [m for m in orden_meses if m in meses_unicos]
+    
+    # Si hay meses no en el orden (edge case), agregarlos al final
+    meses_faltantes = [m for m in meses_unicos if m not in orden_meses]
+    meses_ordenados.extend(meses_faltantes)
+    
+    # Crear tuplas (mes_año, mes_nombre, año, mes_num)
+    # Asumir año basado en si es antes o después de junio
+    resultado = []
+    for mes_nombre in meses_ordenados:
+        mes_num = mes_num_map.get(mes_nombre, 1)
+        # Si es Noviembre-Diciembre, asumir 2025; si es Enero-Octubre, asumir 2026
+        año = 2025 if mes_num >= 11 else 2026
+        mes_año = f"{mes_nombre} {año}"
+        resultado.append((mes_año, mes_nombre, año, mes_num))
+    
+    return resultado
+
 @st.cache_data(ttl=3600)  # 1 hora de caché
 def load_drive_data():
     """Carga datos de la hoja DRIVE del archivo REPORTE FTTH.xlsx"""
@@ -435,44 +493,6 @@ def count_instaladas_con_regla(df, fecha_mes_num, fecha_mes_es_noviembre=False, 
     df_instaladas = df_mes[df_mes['ESTADO'] == 'INSTALADO']
     
     return len(df_instaladas)
-
-@st.cache_data(ttl=3600)
-def get_meses_disponibles():
-    """Obtiene lista de meses únicos disponibles en los datos con su año.
-    Retorna lista de tuplas (mes_año, mes_nombre, año)"""
-    df_drive = load_drive_data()
-    
-    if df_drive is None or df_drive.empty:
-        return []
-    
-    df_temp = df_drive.copy()
-    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
-    
-    # Extraer año y mes
-    df_temp['AÑO'] = df_temp['FECHA'].dt.year
-    df_temp['MES_NUM'] = df_temp['FECHA'].dt.month
-    
-    # Obtener combinaciones únicas de año y mes
-    meses_unicos = df_temp.groupby(['AÑO', 'MES_NUM']).size().reset_index(name='count')
-    meses_unicos = meses_unicos.sort_values(['AÑO', 'MES_NUM'], ascending=[False, False])
-    
-    # Mapear números a nombres
-    mes_nombres = {
-        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
-        5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
-        9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
-    }
-    
-    # Crear lista con formato "Mes Año"
-    meses_disponibles = []
-    for _, row in meses_unicos.iterrows():
-        año = int(row['AÑO'])
-        mes_num = int(row['MES_NUM'])
-        mes_nombre = mes_nombres[mes_num]
-        mes_año = f"{mes_nombre} {año}"
-        meses_disponibles.append((mes_año, mes_nombre, año, mes_num))
-    
-    return meses_disponibles
 
 @st.cache_data(ttl=3600)
 def debug_instaladas_por_dia(mes_seleccionado="Febrero", dia=3):
@@ -3843,11 +3863,11 @@ st.markdown("### ⭐ Resumen Mensual Completo")
 st.markdown('<div style="margin: 20px 0;"></div>', unsafe_allow_html=True)
 
 # Obtener datos para cada mes
-meses_disponibles = ['Noviembre', 'Diciembre', 'Enero', 'Febrero']
+meses_disponibles = get_meses_disponibles()
 datos_meses = []
 totales = {'Leads': 0, 'Contr': 0, 'Cober': 0}
 
-for mes_nombre in meses_disponibles:
+for mes_año, mes_nombre, año, mes_num in meses_disponibles:
     leads, conversion = get_total_leads_and_conversion(mes_nombre)
     con_cobertura = get_con_cobertura_count(mes_nombre)
     cancelados = get_cancelados_mes(mes_nombre)
