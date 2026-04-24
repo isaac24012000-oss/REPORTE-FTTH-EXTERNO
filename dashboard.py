@@ -1617,7 +1617,8 @@ def get_crecimiento_ventas(asesor, mes_seleccionado="Marzo"):
 
 @st.cache_data(ttl=3600)
 def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
-    """Obtiene el conteo de PAGO (sin importar estado) agrupado por semana"""
+    """Obtiene el conteo de PAGO (sin importar estado) agrupado por semana
+    Semana 1: 1-5, Semana 2: 6-12, Semana 3: 13-19, Semana 4: 20-26, Semana 5: 27-30"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
@@ -1632,25 +1633,25 @@ def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
     if df_con_pago.empty:
         return pd.DataFrame()
     
-    # Calcular número de semana basado en el día del mes (semana 1: 1-7, semana 2: 8-14, etc.)
-    df_con_pago['NUM_SEMANA'] = ((df_con_pago['FECHA'].dt.day - 1) // 7) + 1
-    
-    # Crear etiqueta descriptiva para cada semana
+    # Crear etiqueta descriptiva para cada semana según rangos específicos
     def get_semana_label(row):
         day = row['FECHA'].day
-        if day <= 7:
-            return f"Semana 1 (1-7)"
-        elif day <= 14:
-            return f"Semana 2 (8-14)"
-        elif day <= 21:
-            return f"Semana 3 (15-21)"
+        if day <= 5:
+            return (1, "Semana 1 (1-5)")
+        elif day <= 12:
+            return (2, "Semana 2 (6-12)")
+        elif day <= 19:
+            return (3, "Semana 3 (13-19)")
+        elif day <= 26:
+            return (4, "Semana 4 (20-26)")
         else:
-            return f"Semana 4 (22-31)"
+            return (5, "Semana 5 (27-30)")
     
-    df_con_pago['LABEL_SEMANA'] = df_con_pago.apply(get_semana_label, axis=1)
+    df_con_pago[['NUM_SEMANA', 'LABEL_SEMANA']] = df_con_pago.apply(lambda row: pd.Series(get_semana_label(row)), axis=1)
     
     # Contar total de PAGO por semana
     pagos_semanales = df_con_pago.groupby(['NUM_SEMANA', 'LABEL_SEMANA']).size().reset_index(name='TOTAL')
+    pagos_semanales = pagos_semanales.sort_values('NUM_SEMANA')
     
     crecimiento_semanal = pd.DataFrame()
     crecimiento_semanal['Semana'] = pagos_semanales['LABEL_SEMANA'].values
