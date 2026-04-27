@@ -3818,6 +3818,8 @@ for mes_año, mes_nombre, año, mes_num in meses_disponibles:
     sin_cobertura = get_sin_cobertura_mes(mes_nombre)
     datos_meses.append({
         'Mes': mes_nombre,
+        'Año': año,
+        'Mes_Año': f'{mes_nombre} {año}',
         'Leads': leads,
         'Cober': con_cobertura,
         'Contr': conversion,
@@ -3831,6 +3833,12 @@ for mes_año, mes_nombre, año, mes_num in meses_disponibles:
     totales['Leads'] += leads
     totales['Cober'] += con_cobertura
     totales['Contr'] += conversion
+
+# Ordenar datos por año y número de mes (para que aparezcan en orden cronológico correcto)
+datos_meses.sort(key=lambda x: (x['Año'], [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+].index(x['Mes'])))
 
 # Construir tabla HTML de resumen sin expanders (solo datos de resumen)
 html_resumen = '''
@@ -3857,6 +3865,8 @@ html_resumen = '''
 
 for dato in datos_meses:
     mes_nombre = dato['Mes']
+    año = dato['Año']
+    mes_año_display = dato['Mes_Año']
     leads = dato['Leads']
     cober = dato['Cober']
     cob_pct = int(cober/leads*100) if leads > 0 else 0
@@ -3874,7 +3884,7 @@ for dato in datos_meses:
     sincob_pct = int(sincob/leads*100) if leads > 0 else 0
     
     html_resumen += f'''<tr>
-    <td><strong>{mes_nombre}</strong></td>
+    <td><strong>{mes_año_display}</strong></td>
     <td>{leads}</td>
     <td>{cober}</td>
     <td>{cob_pct}%</td>
