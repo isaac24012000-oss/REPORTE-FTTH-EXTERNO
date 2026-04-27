@@ -1311,7 +1311,7 @@ def load_data(mes_seleccionado=None):
     
     return df
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def load_data_codigo_carga(mes_seleccionado=None):
     """Carga datos agrupados por CODIGO DE CARGA (Agente) para un mes exacto.
     Incluye TODOS los agentes de MANTRA, incluso aquellos sin registros en DRIVE.
@@ -1382,8 +1382,8 @@ def load_data_codigo_carga(mes_seleccionado=None):
             df_agente = df_drive_mes[df_drive_mes['CODIGO DE CARGA'] == agente]
             
             if not df_agente.empty:
-                # VENTAS = registros con ESTADO='INSTALADO' (las que realmente se concretan)
-                ventas = len(df_agente[df_agente['ESTADO'] == 'INSTALADO'])
+                # VENTAS = registros con PAGO (no vacío)
+                ventas = len(df_agente[(df_agente['PAGO'] != '') & (df_agente['PAGO'] != 'nan') & (df_agente['PAGO'].notna())])
                 
                 # PENDIENTES = registros con ESTADO='PENDIENTE'
                 pendientes = len(df_agente[df_agente['ESTADO'] == 'PENDIENTE'])
