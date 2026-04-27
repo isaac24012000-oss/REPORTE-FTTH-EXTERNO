@@ -2969,23 +2969,21 @@ def generar_tabla_detalle(df_tabla, tipo_empleado):
         pendientes = int(row.get('Pendientes', 0)) if mostrar_pendientes else 0
         efect = int(row['Efectividad'])
         
-        # Calcular CUMPL% para la semana actual basado en la meta individual
-        cumpl_semana = get_cumplimiento_asesor_semana_actual(asesor, meta, mes)
+        # Calcular CUMPL% como Instaladas / Meta * 100
+        cumpl_semana = round((instaladas / meta * 100)) if meta > 0 else 0
         
-        # Obtener semana actual y meta esperada
-        semana_num, _ = get_semana_actual()
-        metas_esperadas = {1: 25, 2: 50, 3: 75, 4: 100}
-        meta_esperada_porcentaje = metas_esperadas.get(semana_num, 25)
-        
-        # Determinar estado y color basado en si está alcanzando la meta esperada para la semana
-        if cumpl_semana >= meta_esperada_porcentaje:
-            cumpl_color = '#10b981'  # Verde - Excelente (en ruta)
+        # Determinar color basado en el cumplimiento respecto a la meta
+        if cumpl_semana >= 100:
+            cumpl_color = '#10b981'  # Verde - Meta alcanzada
             cumpl_bg_color = 'rgba(16, 185, 129, 0.2)'
-        elif cumpl_semana >= (meta_esperada_porcentaje * 0.5):
-            cumpl_color = '#f59e0b'  # Naranja - Cercano (al 50% de la meta esperada)
+        elif cumpl_semana >= 75:
+            cumpl_color = '#059669'  # Verde más oscuro - Buen progreso
+            cumpl_bg_color = 'rgba(5, 150, 105, 0.2)'
+        elif cumpl_semana >= 50:
+            cumpl_color = '#f59e0b'  # Naranja - En ruta pero no garantizado
             cumpl_bg_color = 'rgba(245, 158, 11, 0.2)'
         else:
-            cumpl_color = '#ef4444'  # Rojo - Crítico (muy por debajo)
+            cumpl_color = '#ef4444'  # Rojo - Crítico
             cumpl_bg_color = 'rgba(239, 68, 68, 0.2)'
         
         # Determinar estado general basado en CONVERSIÓN (Efectividad)
