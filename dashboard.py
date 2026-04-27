@@ -2541,12 +2541,26 @@ with tab1:
         # Crear lista de opciones con formato "Mes Año"
         opciones_meses = [mes_año for mes_año, _, _, _ in meses_disp]
         
+        # Encontrar el índice del mes actual
+        mes_actual = datetime.now().month
+        año_actual = datetime.now().year
+        mes_actual_nombre_map = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+                                  7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
+        mes_actual_nombre = mes_actual_nombre_map.get(mes_actual, 'Abril')
+        mes_actual_display = f"{mes_actual_nombre} {año_actual}"
+        
+        # Buscar el índice del mes actual en la lista, si no existe usar 0
+        try:
+            index_default = opciones_meses.index(mes_actual_display)
+        except ValueError:
+            index_default = 0
+        
         col_mes_sel, col_espacio = st.columns([2, 3])
         with col_mes_sel:
             mes_seleccionado_display = st.selectbox(
                 "Selecciona un mes para analizar:",
                 opciones_meses,
-                index=0,  # Primer mes disponible por defecto
+                index=index_default,  # Mes actual por defecto
                 key="mes_analisis"
             )
         
@@ -2674,9 +2688,9 @@ with tab1:
             # Obtener datos de LISTA
             df_mes_lista = df_lista_clean[df_lista_clean['Mes'] == mes_sel]
             
-            # Clasificar asesores por horario: FULL TIME son meta 60 o meta 45, resto es PART TIME
-            full_time = df_mes_lista[(df_mes_lista['Meta'] == 60) | (df_mes_lista['Meta'] == 45)]['Asesor'].tolist()
-            part_time = df_mes_lista[(df_mes_lista['Meta'] != 60) & (df_mes_lista['Meta'] != 45)]['Asesor'].tolist()
+            # Clasificar asesores por horario: FULL TIME meta >= 50, PART TIME meta < 50
+            full_time = df_mes_lista[df_mes_lista['Meta'] >= 50]['Asesor'].tolist()
+            part_time = df_mes_lista[df_mes_lista['Meta'] < 50]['Asesor'].tolist()
             
             def procesar_horario(lista_asesoras):
                 datos_tabla = []
