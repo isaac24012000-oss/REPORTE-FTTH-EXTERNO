@@ -58,7 +58,7 @@ def get_total_leads_and_conversion(mes_seleccionado="Noviembre"):
     
     return total_leads, total_conversion
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
     """Calcula la conversión: Ventas Del Mes (DRIVE) / Con Cobertura (MANTRA)
     = Total de Transacciones en DRIVE / Registros con cobertura en MANTRA"""
@@ -207,54 +207,28 @@ def get_ventas_generales_mes(mes_seleccionado="Noviembre"):
     total_transacciones = len(df_mes)
     return total_transacciones
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def get_ventas_del_mes_por_fecha(mes_seleccionado="Abril"):
-    """Obtiene SOLO las transacciones cuya FECHA cae dentro del mes especificado.
-    NO incluye transacciones de fechas anteriores que se estén procesando ahora.
-    Filtra por FECHA exacta: 1/4 al 30/4 (o último día del mes)"""
+    """Obtiene las transacciones para el mes especificado usando la columna MES del DRIVE.
+    Esto es más confiable que filtrar por fechas ya que MES contiene el mes exacto."""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
         return 0
     
-    # Mapeo de meses a números
-    mes_numeros = {
-        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
-        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
-        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    # Mapeo de meses a nombres de columna MES
+    mes_nombres = {
+        'Enero': 'Enero', 'Febrero': 'Febrero', 'Marzo': 'Marzo', 'Abril': 'Abril',
+        'Mayo': 'Mayo', 'Junio': 'Junio', 'Julio': 'Julio', 'Agosto': 'Agosto',
+        'Septiembre': 'Septiembre', 'Octubre': 'Octubre', 'Noviembre': 'Noviembre', 'Diciembre': 'Diciembre'
     }
     
-    mes_num = mes_numeros.get(mes_seleccionado, None)
-    if mes_num is None:
+    mes_limpio = mes_nombres.get(mes_seleccionado, None)
+    if mes_limpio is None:
         return 0
     
-    # Convertir FECHA a datetime
-    df_temp = df_drive.copy()
-    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
-    
-    # Eliminar registros sin fecha válida
-    df_temp = df_temp[df_temp['FECHA'].notna()]
-    
-    # Obtener año (asumir el año más reciente disponible)
-    if df_temp.empty:
-        return 0
-    
-    año_filtro = df_temp['FECHA'].dt.year.max()
-    
-    # Crear rango de fechas para el mes
-    fecha_inicio = pd.Timestamp(year=año_filtro, month=mes_num, day=1)
-    
-    # Calcular último día del mes
-    if mes_num == 12:
-        fecha_fin = pd.Timestamp(year=año_filtro + 1, month=1, day=1) - pd.DateOffset(days=1)
-    else:
-        fecha_fin = pd.Timestamp(year=año_filtro, month=mes_num + 1, day=1) - pd.DateOffset(days=1)
-    
-    # Filtrar SOLO por FECHA dentro del rango
-    df_mes = df_temp[
-        (df_temp['FECHA'] >= fecha_inicio) & 
-        (df_temp['FECHA'] <= fecha_fin)
-    ]
+    # Filtrar por la columna MES directamente
+    df_mes = df_drive[df_drive['MES'] == mes_limpio]
     
     # Contar todas las transacciones de ese mes
     total_ventas = len(df_mes)
