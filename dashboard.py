@@ -357,7 +357,7 @@ def load_lista_metas():
     except Exception as e:
         return None
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)  # Reducido a 60 segundos para detectar Abril rápidamente
 def get_meses_disponibles():
     """Obtiene dinámicamente todos los meses disponibles en los datos
     Retorna lista de tuplas (mes_año, mes_nombre, año, mes_num)"""
@@ -499,7 +499,7 @@ def debug_instaladas_por_dia(mes_seleccionado="Febrero", dia=3):
     # Retornar TODOS los registros sin filtrar
     return df_filtrado
 
-@st.cache_data(ttl=3600)  # 1 hora de caché
+@st.cache_data(ttl=60)  # Reducido a 60 segundos para datos actualizados de Abril
 def get_instaladas_por_semana(mes_seleccionado="Noviembre"):
     """Obtiene VENTAS por DÍA para un mes específico.
     VENTAS = todos los registros del mes (sin importar PAGO o ESTADO)
