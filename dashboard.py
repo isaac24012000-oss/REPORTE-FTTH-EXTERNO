@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# Actualizado 06/04/2026 - Preparado para ABRIL 2026
+# Actualizado 06/05/2026 - Preparado para MAYO 2026
 
 # ============= CARGA DE DATOS DEL EXCEL =============
 
@@ -1443,6 +1443,58 @@ def load_data_codigo_carga(mes_seleccionado=None):
     
     return df_resultado
 
+# ============= ANÁLISIS DE LEADS CON COBERTURA POR HORA Y FECHA =============
+
+@st.cache_data(ttl=3600)
+def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
+    """Obtiene tabla de Leads con Cobertura (NIVEL 2) por Hora y Fecha desde MANTRA
+    Retorna un DataFrame pivote con horas en filas y fechas en columnas"""
+    df_mantra = load_mantra_data()
+    
+    if df_mantra is None or df_mantra.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por mes
+    df_mes = df_mantra[df_mantra['Mes'] == mes_seleccionado].copy()
+    
+    if df_mes.empty:
+        return pd.DataFrame()
+    
+    # Limpiar espacios en blanco
+    df_mes['NIVEL 2'] = df_mes['NIVEL 2'].astype(str).str.strip()
+    
+    # Filtrar solo los que tienen "Con Cobertura"
+    df_cobertura = df_mes[df_mes['NIVEL 2'] == 'Con Cobertura'].copy()
+    
+    if df_cobertura.empty:
+        return pd.DataFrame()
+    
+    # Convertir FECHA a datetime
+    df_cobertura['Fecha'] = pd.to_datetime(df_cobertura['Fecha'], errors='coerce')
+    
+    # Extraer fecha (día) y hora
+    df_cobertura['Dia'] = df_cobertura['Fecha'].dt.date
+    df_cobertura['Hora'] = df_cobertura['Fecha'].dt.hour
+    
+    # Agrupar por hora y día
+    df_pivot = df_cobertura.groupby(['Hora', 'Dia']).size().reset_index(name='Cantidad')
+    
+    # Crear tabla pivote (horas en filas, fechas en columnas)
+    tabla_pivot = df_pivot.pivot(index='Hora', columns='Dia', values='Cantidad').fillna(0).astype(int)
+    
+    # Agregar fila de totales por fecha
+    totales_por_fecha = tabla_pivot.sum()
+    tabla_pivot.loc['TOTAL'] = totales_por_fecha
+    
+    # Agregar columna de totales por hora
+    tabla_pivot['TOTAL'] = tabla_pivot.sum(axis=1)
+    
+    # Ordenar índice (horas)
+    horas_orden = [h for h in range(24) if h in tabla_pivot.index] + ['TOTAL']
+    tabla_pivot = tabla_pivot.reindex(horas_orden, fill_value=0)
+    
+    return tabla_pivot
+
 # ============= ANÁLISIS DETALLADO DEL DRIVE =============
 
 @st.cache_data(ttl=3600)
@@ -2140,7 +2192,7 @@ st.markdown("### ⚙️ Filtros y Opciones")
 col_filtros = st.columns(3, gap="medium")
 
 with col_filtros[0]:
-    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril"], index=5)
+    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo"], index=6)
 
 # Mapeo de meses a años
 mes_año_map = {
@@ -2149,7 +2201,8 @@ mes_año_map = {
     "Enero": "Enero 2026",
     "Febrero": "Febrero 2026",
     "Marzo": "Marzo 2026",
-    "Abril": "Abril 2026"
+    "Abril": "Abril 2026",
+    "Mayo": "Mayo 2026"
 }
 
 # Header mejorado - Dinámico
@@ -2941,8 +2994,8 @@ df_detail['Con Cobertura'] = con_cobertura_list
 df_detail['Ventas'] = ventas_list
 
 # Separar en Full Time (meta >= 55) y Part Time (meta < 55)
-# Excepción: ISABEL y LAURA son FULL TIME aunque tengan meta 45
-asesoras_fulltime_especial = ['ZIM_ISABELPF_VTP', 'ZIM_LAURAVS_VTP']
+# Excepción: ISABEL, LAURA y KARINA son FULL TIME aunque tengan meta < 55
+asesoras_fulltime_especial = ['ZIM_ISABELPF_VTP', 'ZIM_LAURAVS_VTP', 'ZIM_KARINASE_VTP']
 condicion_fulltime = (df_detail['Meta'] >= 55) | (df_detail['Asesor'].isin(asesoras_fulltime_especial))
 df_fulltime = df_detail[condicion_fulltime].copy()
 df_parttime = df_detail[~condicion_fulltime].copy()
@@ -3828,6 +3881,91 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
 
 else:
     st.info(f"No hay asesores con registros en el DRIVE para {mes}")
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# ============= NUEVO BLOQUE: ANÁLISIS DE LEADS CON COBERTURA POR HORA Y FECHA =============
+st.markdown("### 📅 Análisis de Leads con Cobertura por Hora y Fecha")
+st.markdown("*Tabla que muestra la cantidad de Leads con cobertura (MANTRA) agrupados por hora del día y fecha*")
+
+# Obtener datos
+tabla_cobertura = get_leads_cobertura_por_hora_fecha(mes)
+
+if not tabla_cobertura.empty:
+    # Mostrar información resumida
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        total_leads_cobertura = tabla_cobertura.loc['TOTAL', 'TOTAL'] if 'TOTAL' in tabla_cobertura.index else 0
+        st.metric("📊 Total Leads con Cobertura", int(total_leads_cobertura))
+    
+    with col2:
+        # Encontrar la hora con más leads
+        if 'TOTAL' in tabla_cobertura.index:
+            tabla_sin_total = tabla_cobertura.drop('TOTAL')
+            if not tabla_sin_total.empty:
+                hora_max = tabla_sin_total['TOTAL'].idxmax() if len(tabla_sin_total) > 0 else "N/A"
+                max_leads_hora = tabla_sin_total['TOTAL'].max() if len(tabla_sin_total) > 0 else 0
+                st.metric(f"⏰ Hora Pico", f"{int(hora_max)}:00 hrs", delta=f"{int(max_leads_hora)} leads")
+        else:
+            st.metric("⏰ Hora Pico", "N/A")
+    
+    with col3:
+        # Promedio de leads por hora
+        if 'TOTAL' in tabla_cobertura.index:
+            tabla_sin_total = tabla_cobertura.drop('TOTAL')
+            if len(tabla_sin_total) > 0:
+                promedio = tabla_sin_total['TOTAL'].mean()
+                st.metric("📈 Promedio por Hora", f"{promedio:.1f} leads")
+        else:
+            st.metric("📈 Promedio por Hora", "N/A")
+    
+    # Mostrar la tabla completa con estilos
+    st.markdown("#### Detalle por Hora y Fecha")
+    
+    # Convertir a columnas de formato legible
+    tabla_display = tabla_cobertura.copy()
+    tabla_display.index.name = 'Hora'
+    tabla_display = tabla_display.reset_index()
+    
+    # Renombrar columnas de fecha para que sean más legibles
+    tabla_display.columns = ['Hora'] + [str(col).split()[0] if col != 'TOTAL' else 'TOTAL' for col in tabla_display.columns[1:]]
+    
+    # Mostrar como tabla interactiva
+    st.dataframe(
+        tabla_display,
+        use_container_width=True,
+        height=600,
+        hide_index=True
+    )
+    
+    # Análisis adicional
+    st.markdown("#### 💡 Análisis por Franja Horaria")
+    
+    tabla_horas = tabla_cobertura.drop('TOTAL', errors='ignore')
+    
+    # Definir franjas horarias
+    franjas = {
+        'Madrugada (0-6h)': [h for h in range(0, 7)],
+        'Mañana (7-12h)': [h for h in range(7, 13)],
+        'Tarde (13-18h)': [h for h in range(13, 19)],
+        'Noche (19-23h)': [h for h in range(19, 24)]
+    }
+    
+    col_franjas = st.columns(4)
+    
+    for idx, (franja_nombre, horas) in enumerate(franjas.items()):
+        horas_validas = [h for h in horas if h in tabla_horas.index]
+        if horas_validas:
+            subtotal = tabla_horas.loc[horas_validas, 'TOTAL'].sum() if 'TOTAL' in tabla_horas.columns else tabla_horas.loc[horas_validas].sum(axis=1).sum()
+        else:
+            subtotal = 0
+        
+        with col_franjas[idx]:
+            st.metric(franja_nombre, int(subtotal))
+
+else:
+    st.info(f"No hay datos de Leads con cobertura para {mes}")
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
