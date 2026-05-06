@@ -357,37 +357,35 @@ def load_lista_metas():
     except Exception as e:
         return None
 
-@st.cache_data(ttl=60)  # Reducido a 60 segundos para detectar Abril rápidamente
+@st.cache_data(ttl=60)  # Reducido a 60 segundos para detectar cambios rápidamente
 def get_meses_disponibles():
-    """Obtiene dinámicamente todos los meses disponibles en los datos
-    Retorna lista de tuplas (mes_año, mes_nombre, año, mes_num)"""
-    df_mantra = load_mantra_data()
+    """Obtiene dinámicamente todos los meses disponibles en DRIVE (hoja de ventas)
+    Retorna lista de tuplas (mes_año, mes_nombre, año, mes_num) ordenadas por mes y año"""
+    df_drive = load_drive_data()
     
-    if df_mantra is None or df_mantra.empty:
+    if df_drive is None or df_drive.empty:
         # Fallback a los meses por defecto
         return [
             ('Noviembre 2025', 'Noviembre', 2025, 11),
             ('Diciembre 2025', 'Diciembre', 2025, 12),
             ('Enero 2026', 'Enero', 2026, 1),
-            ('Febrero 2026', 'Febrero', 2026, 2)
+            ('Febrero 2026', 'Febrero', 2026, 2),
+            ('Marzo 2026', 'Marzo', 2026, 3),
+            ('Abril 2026', 'Abril', 2026, 4)
         ]
     
-    # Obtener meses únicos
-    meses_unicos = df_mantra['Mes'].dropna().unique().tolist()
+    # Obtener meses únicos del DRIVE
+    meses_unicos = df_drive['MES'].dropna().unique().tolist()
     
     if not meses_unicos:
         return [
             ('Noviembre 2025', 'Noviembre', 2025, 11),
             ('Diciembre 2025', 'Diciembre', 2025, 12),
             ('Enero 2026', 'Enero', 2026, 1),
-            ('Febrero 2026', 'Febrero', 2026, 2)
+            ('Febrero 2026', 'Febrero', 2026, 2),
+            ('Marzo 2026', 'Marzo', 2026, 3),
+            ('Abril 2026', 'Abril', 2026, 4)
         ]
-    
-    # Orden correcto de meses
-    orden_meses = [
-        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-    ]
     
     # Mapeo de meses a números
     mes_num_map = {
@@ -395,6 +393,12 @@ def get_meses_disponibles():
         'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
         'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
     }
+    
+    # Orden correcto de meses
+    orden_meses = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
     
     # Filtrar y ordenar meses según el orden correcto
     meses_ordenados = [m for m in orden_meses if m in meses_unicos]
@@ -414,6 +418,40 @@ def get_meses_disponibles():
         resultado.append((mes_año, mes_nombre, año, mes_num))
     
     return resultado
+
+@st.cache_data(ttl=60)
+def get_mes_mas_reciente():
+    """Obtiene el mes más reciente disponible en DRIVE basado en fechas
+    Retorna tupla (mes_año, mes_nombre, año, mes_num)"""
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty:
+        return ('Abril 2026', 'Abril', 2026, 4)
+    
+    # Convertir FECHA a datetime
+    df_temp = df_drive.copy()
+    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
+    df_temp = df_temp[df_temp['FECHA'].notna()]
+    
+    if df_temp.empty:
+        return ('Abril 2026', 'Abril', 2026, 4)
+    
+    # Obtener el mes y año más reciente
+    fecha_max = df_temp['FECHA'].max()
+    mes_num_reciente = fecha_max.month
+    año_reciente = fecha_max.year
+    
+    # Mapeo de número de mes a nombre
+    mes_num_a_nombre = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+        5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+        9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    mes_nombre_reciente = mes_num_a_nombre.get(mes_num_reciente, 'Abril')
+    mes_año_reciente = f"{mes_nombre_reciente} {año_reciente}"
+    
+    return (mes_año_reciente, mes_nombre_reciente, año_reciente, mes_num_reciente)
 
 @st.cache_data(ttl=3600)  # 1 hora de caché
 def load_drive_data():
@@ -2515,26 +2553,22 @@ with tab1:
         # Crear lista de opciones con formato "Mes Año"
         opciones_meses = [mes_año for mes_año, _, _, _ in meses_disp]
         
-        # Encontrar el índice del mes actual
-        mes_actual = datetime.now().month
-        año_actual = datetime.now().year
-        mes_actual_nombre_map = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
-                                  7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
-        mes_actual_nombre = mes_actual_nombre_map.get(mes_actual, 'Abril')
-        mes_actual_display = f"{mes_actual_nombre} {año_actual}"
+        # Obtener el mes más reciente disponible en DRIVE
+        mes_reciente_tup = get_mes_mas_reciente()
+        mes_reciente_display = mes_reciente_tup[0]  # Formato "Mes Año"
         
-        # Buscar el índice del mes actual en la lista, si no existe usar 0
+        # Buscar el índice del mes más reciente en la lista
         try:
-            index_default = opciones_meses.index(mes_actual_display)
+            index_default = opciones_meses.index(mes_reciente_display)
         except ValueError:
-            index_default = 0
+            index_default = len(opciones_meses) - 1  # Usar el último mes disponible
         
         col_mes_sel, col_espacio = st.columns([2, 3])
         with col_mes_sel:
             mes_seleccionado_display = st.selectbox(
                 "Selecciona un mes para analizar:",
                 opciones_meses,
-                index=index_default,  # Mes actual por defecto
+                index=index_default,  # Mes más reciente por defecto
                 key="mes_analisis"
             )
         
