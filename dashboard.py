@@ -1469,12 +1469,19 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
     if df_cobertura.empty:
         return pd.DataFrame()
     
-    # Convertir FECHA a datetime
+    # Convertir FECHA a datetime y extraer solo la fecha (sin hora)
     df_cobertura['Fecha'] = pd.to_datetime(df_cobertura['Fecha'], errors='coerce')
-    
-    # Extraer fecha (día) y hora
     df_cobertura['Dia'] = df_cobertura['Fecha'].dt.date
-    df_cobertura['Hora'] = df_cobertura['Fecha'].dt.hour
+    
+    # Convertir HORA a int y filtrar valores válidos (no NaN)
+    df_cobertura['Hora'] = df_cobertura['HORA'].dropna().astype(int) if 'HORA' in df_cobertura.columns else None
+    
+    # Filtrar filas donde HORA no es NaN
+    df_cobertura = df_cobertura.dropna(subset=['HORA']).copy()
+    df_cobertura['Hora'] = df_cobertura['HORA'].astype(int)
+    
+    if df_cobertura.empty:
+        return pd.DataFrame()
     
     # Agrupar por hora y día
     df_pivot = df_cobertura.groupby(['Hora', 'Dia']).size().reset_index(name='Cantidad')
@@ -1489,8 +1496,9 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
     # Agregar columna de totales por hora
     tabla_pivot['TOTAL'] = tabla_pivot.sum(axis=1)
     
-    # Ordenar índice (horas)
-    horas_orden = [h for h in range(24) if h in tabla_pivot.index] + ['TOTAL']
+    # Ordenar índice (horas de menor a mayor)
+    horas_validas = sorted([h for h in tabla_pivot.index if isinstance(h, (int, float)) and h != 'TOTAL'])
+    horas_orden = horas_validas + ['TOTAL']
     tabla_pivot = tabla_pivot.reindex(horas_orden, fill_value=0)
     
     return tabla_pivot
