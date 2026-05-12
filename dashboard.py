@@ -722,6 +722,67 @@ def get_comparativo_acumulativo_multiples_meses():
     return df_acumulativo
 
 @st.cache_data(ttl=3600)
+def get_comparativo_diario_multiples_meses():
+    """Obtiene un comparativo de VENTAS por DÍA para todos los meses disponibles (últimos 6 meses).
+    VENTAS = todos los registros del mes (sin importar PAGO o ESTADO)
+    Retorna un DataFrame con día como índice y cada mes como columna
+    Filtra por fecha actual para no mostrar registros futuros"""
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty:
+        return pd.DataFrame()
+    
+    df_temp = df_drive.copy()
+    df_temp['FECHA'] = pd.to_datetime(df_temp['FECHA'], errors='coerce')
+    
+    # FILTRO POR FECHA ACTUAL - no mostrar fechas futuras
+    fecha_actual = pd.Timestamp.today()
+    df_temp = df_temp[df_temp['FECHA'] <= fecha_actual]
+    
+    # Extraer mes y año
+    df_temp['FECHA_MES_NUM'] = df_temp['FECHA'].dt.month
+    df_temp['FECHA_AÑO'] = df_temp['FECHA'].dt.year
+    df_temp['FECHA_DIA'] = df_temp['FECHA'].dt.day
+    
+    mes_nombres = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+        5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+        9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    df_temp['MES_NOMBRE'] = df_temp['FECHA_MES_NUM'].map(mes_nombres)
+    
+    # Obtener meses únicos disponibles y ordenarlos cronológicamente
+    df_temp['FECHA_SORT'] = df_temp['FECHA_AÑO'] * 100 + df_temp['FECHA_MES_NUM']
+    meses_disponibles = df_temp.sort_values('FECHA_SORT')['MES_NOMBRE'].unique()
+    
+    # Tomar últimos 6 meses
+    meses_a_mostrar = list(meses_disponibles[-6:])
+    
+    # Filtrar datos para estos meses
+    df_filtrado = df_temp[df_temp['MES_NOMBRE'].isin(meses_a_mostrar)].copy()
+    
+    if df_filtrado.empty:
+        return pd.DataFrame()
+    
+    # Agrupar por mes y día (contando todos los registros)
+    df_pivot = df_filtrado.groupby(['MES_NOMBRE', 'FECHA_DIA']).size().reset_index(name='VENTAS')
+    
+    # Crear tabla pivote (días como filas, meses como columnas)
+    df_comparativo = df_pivot.pivot(index='FECHA_DIA', columns='MES_NOMBRE', values='VENTAS').fillna(0).astype(int)
+    
+    # Reordenar columnas en orden cronológico
+    df_comparativo = df_comparativo[meses_a_mostrar]
+    
+    # Ordenar por día
+    df_comparativo = df_comparativo.sort_index()
+    
+    # Agregar columna de Día
+    df_comparativo.insert(0, 'Día', df_comparativo.index)
+    df_comparativo['Día'] = df_comparativo['Día'].astype(int)
+    
+    return df_comparativo
+
+@st.cache_data(ttl=3600)
 def get_progreso_semanal(mes_seleccionado="Abril"):
     """Obtiene el progreso semanal vs la meta esperada.
     Meta esperada por semana: 
@@ -2700,36 +2761,99 @@ with tab1:
         
         st.plotly_chart(fig_semanas, use_container_width=True, config={'displayModeBar': False})
         
-        # Mostrar tabla de datos
-        st.markdown("#### Detalle Diario")
-        df_tabla_semanas = df_semanas.copy()
-        df_tabla_semanas.columns = ['Día', 'Ventas']
+        # ============= COMPARATIVA HISTÓRICA POR DÍA: Últimos Meses =============
+        st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
+        st.markdown("#### 📊 Comparativa Histórica por Día (Últimos Meses)")
         
-        # Calcular estadísticas
-        max_dia = df_tabla_semanas.loc[df_tabla_semanas['Ventas'].idxmax(), 'Día']
-        max_valor = df_tabla_semanas['Ventas'].max()
-        min_valor = df_tabla_semanas['Ventas'].min()
-        promedio = df_tabla_semanas['Ventas'].mean()
+        df_comparativo_diario = get_comparativo_diario_multiples_meses()
         
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Día con + Ventas", max_dia, f"+{max_valor}")
-        with col2:
-            st.metric("Máximo por Día", max_valor)
-        with col3:
-            st.metric("Mínimo por Día", min_valor)
-        with col4:
-            st.metric("Promedio por Día", f"{promedio:.1f}")
-        
-        st.dataframe(
-            df_tabla_semanas,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Día": st.column_config.TextColumn(width=200),
-                "Instaladas": st.column_config.NumberColumn(width=150)
-            }
-        )
+        if not df_comparativo_diario.empty:
+            # Extraer columnas de meses (sin la columna 'Día')
+            meses_cols = [col for col in df_comparativo_diario.columns if col != 'Día']
+            
+            # Tabla comparativa detallada
+            st.markdown('<div style="text-align: center;"><h4 style="margin-bottom: 20px;">📋 Tabla Comparativa Detallada</h4></div>', unsafe_allow_html=True)
+            
+            df_display = df_comparativo_diario.copy()
+            df_display['Día'] = df_display['Día'].astype(int)
+            
+            # Crear tabla HTML con valores y flechas de tendencia
+            html_table = '<table style="width:100%; border-collapse: collapse; margin: 0 auto;">'
+            
+            # Encabezado
+            html_table += '<tr style="background-color: #f0f2f6; border-bottom: 2px solid #ddd;">'
+            html_table += '<th style="padding: 12px; text-align: center; border-right: 1px solid #ddd;">Día</th>'
+            for mes in meses_cols:
+                html_table += f'<th style="padding: 12px; text-align: center; border-right: 1px solid #ddd;">{mes}</th>'
+            html_table += '</tr>'
+            
+            # Filas de datos
+            for idx, row in df_comparativo_diario.iterrows():
+                dia = int(row['Día'])
+                html_table += f'<tr style="border-bottom: 1px solid #eee;">'
+                html_table += f'<td style="padding: 12px; text-align: center; font-weight: bold; border-right: 1px solid #eee;">{dia}</td>'
+                
+                for col_idx, mes in enumerate(meses_cols):
+                    valor_actual = int(row[mes])
+                    
+                    # Determinar flecha comparando con mes anterior
+                    if col_idx == 0:
+                        flecha = ""
+                    else:
+                        mes_anterior = meses_cols[col_idx - 1]
+                        valor_anterior = int(row[mes_anterior])
+                        
+                        if valor_actual > valor_anterior:
+                            flecha = "📈"
+                        elif valor_actual < valor_anterior:
+                            flecha = "📉"
+                        else:
+                            flecha = "➡️"
+                    
+                    # Determinar color según tendencia
+                    if flecha == "📈":
+                        color = "#10b981"  # Verde
+                    elif flecha == "📉":
+                        color = "#ef4444"  # Rojo
+                    else:
+                        color = "#6b7280"  # Gris
+                    
+                    if flecha:
+                        html_table += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee;"><span style="color: {color};">{valor_actual} {flecha}</span></td>'
+                    else:
+                        html_table += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee;">{valor_actual}</td>'
+                
+                html_table += '</tr>'
+            
+            html_table += '</table>'
+            
+            st.markdown(html_table, unsafe_allow_html=True)
+            
+            # Análisis de variación
+            st.markdown("**Análisis de Variación:**")
+            mes_actual = meses_cols[-1]  # Último mes (más reciente)
+            mes_anterior = meses_cols[-2] if len(meses_cols) > 1 else None
+            
+            if mes_anterior:
+                # Comparar mismo día en ambos meses
+                dias_comunes = min(len(df_comparativo_diario[mes_actual]), len(df_comparativo_diario[mes_anterior]))
+                
+                ventas_actual_comunes = df_comparativo_diario[mes_actual][:dias_comunes].sum()
+                ventas_anterior_comunes = df_comparativo_diario[mes_anterior][:dias_comunes].sum()
+                
+                if ventas_anterior_comunes > 0:
+                    variacion_pct = ((ventas_actual_comunes - ventas_anterior_comunes) / ventas_anterior_comunes * 100)
+                    variacion_texto = f"📈 +{variacion_pct:.0f}%" if variacion_pct > 0 else f"📉 {variacion_pct:.0f}%" if variacion_pct < 0 else "➡️ 0%"
+                    
+                    col_var1, col_var2, col_var3 = st.columns(3)
+                    with col_var1:
+                        st.metric(f"Ventas {mes_actual} (primeros {dias_comunes} días)", ventas_actual_comunes)
+                    with col_var2:
+                        st.metric(f"Ventas {mes_anterior} (primeros {dias_comunes} días)", ventas_anterior_comunes)
+                    with col_var3:
+                        st.metric(f"Variación", variacion_texto)
+        else:
+            st.info("No hay datos suficientes para realizar la comparativa histórica")
         
         # ============= COMPARATIVA POR HORARIO: FULL TIME vs PART TIME dentro del tab1 =============
         st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
@@ -3300,7 +3424,7 @@ if not df_codigos_carga.empty:
         with col_est1:
             st.metric("Total en Riesgo", len(df_en_riesgo))
         with col_est2:
-            st.metric("Promedio Conversión", f"{df_en_riesgo['CONV_VENTAS_COB'].mean():.1f}%")
+            st.metric("Promedio Conversión", f"{df_en_riesgo['CONV_VENTAS_COB'].mean():.0f}%")
         with col_est3:
             st.metric("Más Bajo", f"{df_en_riesgo['CONV_VENTAS_COB'].min()}%")
         with col_est4:
@@ -3591,7 +3715,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
             st.metric(
                 "Instaladas",
                 int(kpis['instaladas']),
-                delta=f"{kpis['tasa_conversion']:.1f}%",
+                delta=f"{kpis['tasa_conversion']:.0f}%",
                 help="Ventas efectivas"
             )
         
@@ -3600,7 +3724,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
             st.metric(
                 "Canceladas",
                 f"{color_cancelacion} {int(kpis['canceladas'])}",
-                delta=f"-{kpis['tasa_cancelacion']:.1f}%",
+                delta=f"-{kpis['tasa_cancelacion']:.0f}%",
                 help="Ventas que se cancelaron"
             )
         
@@ -3614,7 +3738,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
         with metric_cols[4]:
             st.metric(
                 "Velocidad",
-                f"{kpis['velocidad_venta']:.1f} /día",
+                f"{kpis['velocidad_venta']:.0f} /día",
                 help="Ventas por día promedio"
             )
         
@@ -3685,7 +3809,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     y=promedio_diario,
                     line_dash="dash",
                     line_color="orange",
-                    annotation_text=f"Promedio: {promedio_diario:.1f}",
+                    annotation_text=f"Promedio: {promedio_diario:.0f}",
                     annotation_position="right"
                 )
                 
@@ -3725,9 +3849,9 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     with col_crec1:
                         st.metric("Crecimiento Total", f"+{crecimiento_total:.0f} ventas")
                     with col_crec2:
-                        st.metric("Promedio Diario", f"{promedio_diario:.1f} ventas/día")
+                        st.metric("Promedio Diario", f"{promedio_diario:.0f} ventas/día")
                     with col_crec3:
-                        st.metric("Velocidad Reciente", f"{velocidad_reciente:.1f} ventas/día")
+                        st.metric("Velocidad Reciente", f"{velocidad_reciente:.0f} ventas/día")
                     
                     # Segunda fila de métricas
                     col_crec4, col_crec5 = st.columns(2)
@@ -3763,7 +3887,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     y=promedio_semanal,
                     line_dash="dash",
                     line_color="orange",
-                    annotation_text=f"Promedio: {promedio_semanal:.1f}",
+                    annotation_text=f"Promedio: {promedio_semanal:.0f}",
                     annotation_position="right"
                 )
                 
@@ -3797,7 +3921,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     with col_sem1:
                         st.metric("Total de PAGO", f"{total_pagos:.0f}")
                     with col_sem2:
-                        st.metric("Promedio por Semana", f"{promedio_semanal:.1f} PAGO/semana")
+                        st.metric("Promedio por Semana", f"{promedio_semanal:.0f} PAGO/semana")
                     with col_sem3:
                         st.metric("Semana Actual", f"{velocidad_semana_actual:.0f} PAGO")
                     
@@ -3924,12 +4048,74 @@ if not tabla_cobertura.empty:
             tabla_sin_total = tabla_cobertura.drop('TOTAL')
             if len(tabla_sin_total) > 0:
                 promedio = tabla_sin_total['TOTAL'].mean()
-                st.metric("📈 Promedio por Hora", f"{promedio:.1f} leads")
+                st.metric("📈 Promedio por Hora", f"{promedio:.0f} leads")
         else:
             st.metric("📈 Promedio por Hora", "N/A")
     
-    # Mostrar la tabla completa con estilos
-    st.markdown("#### Detalle por Hora y Fecha")
+    # Mostrar gráfico de línea por hora
+    st.markdown("#### 📊 Detalle por Hora y Fecha - Gráfico de Tendencia")
+    
+    tabla_horas_plot = tabla_cobertura.drop('TOTAL', errors='ignore').copy()
+    
+    if not tabla_horas_plot.empty and 'TOTAL' in tabla_cobertura.columns:
+        # Preparar datos para el gráfico
+        datos_plot = tabla_cobertura.drop('TOTAL', errors='ignore').copy()
+        datos_plot['TOTAL'] = tabla_cobertura['TOTAL']
+        
+        # Crear gráfico
+        fig_horas = go.Figure()
+        
+        fig_horas.add_trace(go.Scatter(
+            x=datos_plot.index,
+            y=datos_plot['TOTAL'],
+            mode='lines+markers',
+            name='Leads por Hora',
+            line=dict(color='#3b82f6', width=3),
+            marker=dict(size=8),
+            hovertemplate='<b>%{x}:00 hrs</b><br>Leads: %{y}<extra></extra>'
+        ))
+        
+        # Destacar franjas horarias pico (10-12 y 14-16)
+        horas_pico = [10, 11, 14, 15, 16]
+        for hora_pico in horas_pico:
+            if hora_pico in datos_plot.index:
+                fig_horas.add_vline(
+                    x=hora_pico,
+                    line_dash="dash",
+                    line_color="rgba(239, 68, 68, 0.3)",
+                    annotation_text=f"Pico {hora_pico}:00",
+                    annotation_position="top"
+                )
+        
+        fig_horas.update_layout(
+            title="Leads por Hora - Identificando Horarios Pico",
+            xaxis_title="Hora del Día",
+            yaxis_title="Cantidad de Leads",
+            height=400,
+            hovermode='x unified',
+            xaxis=dict(
+                gridcolor='rgba(0,0,0,0.05)',
+                showgrid=True,
+                zeroline=False,
+                tickmode='linear',
+                tick0=0,
+                dtick=1
+            ),
+            yaxis=dict(
+                gridcolor='rgba(0,0,0,0.05)',
+                showgrid=True,
+                zeroline=False
+            ),
+            plot_bgcolor='rgba(248, 250, 252, 0.5)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(size=11, family='Arial', color='#1e293b'),
+            margin=dict(l=50, r=50, t=80, b=50)
+        )
+        
+        st.plotly_chart(fig_horas, use_container_width=True, config={'displayModeBar': False})
+    
+    # Tabla detallada con estilos destacando horas pico
+    st.markdown("#### 📋 Detalle Completo por Hora y Fecha")
     
     # Convertir a columnas de formato legible
     tabla_display = tabla_cobertura.copy()
@@ -3939,20 +4125,73 @@ if not tabla_cobertura.empty:
     # Renombrar columnas de fecha para que sean más legibles
     tabla_display.columns = ['Hora'] + [str(col).split()[0] if col != 'TOTAL' else 'TOTAL' for col in tabla_display.columns[1:]]
     
-    # Mostrar como tabla interactiva
-    st.dataframe(
-        tabla_display,
-        use_container_width=True,
-        height=600,
-        hide_index=True
-    )
+    # Crear tabla HTML con colores para horas pico
+    html_table_horas = '<table style="width:100%; border-collapse: collapse; margin: 20px auto;">'
     
-    # Análisis adicional
-    st.markdown("#### 💡 Análisis por Franja Horaria")
+    # Encabezado
+    html_table_horas += '<tr style="background-color: #f0f2f6; border-bottom: 2px solid #ddd;">'
+    for col in tabla_display.columns:
+        html_table_horas += f'<th style="padding: 12px; text-align: center; border-right: 1px solid #ddd;">{col}</th>'
+    html_table_horas += '</tr>'
+    
+    # Filas de datos
+    horas_pico = [10, 11, 14, 15, 16]
+    for idx, row in tabla_display.iterrows():
+        hora = int(row['Hora'])
+        es_pico = hora in horas_pico
+        bg_color = '#fef08a' if es_pico else '#ffffff'  # Amarillo para pico, blanco para normal
+        border_left = '5px solid #ef4444' if es_pico else '1px solid #eee'  # Rojo para pico
+        
+        html_table_horas += f'<tr style="background-color: {bg_color}; border-bottom: 1px solid #eee; border-left: {border_left};">'
+        
+        for col_idx, col in enumerate(tabla_display.columns):
+            valor = row[col]
+            is_total = col == 'TOTAL'
+            font_weight = 'bold' if is_total or es_pico else 'normal'
+            color = '#ef4444' if es_pico and is_total else '#1e293b'
+            
+            if es_pico and col_idx == 0:
+                html_table_horas += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color};"><span style="background-color: #ef4444; color: white; padding: 2px 6px; border-radius: 3px;">🔥 {valor}</span></td>'
+            else:
+                html_table_horas += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color};">{valor}</td>'
+        
+        html_table_horas += '</tr>'
+    
+    html_table_horas += '</table>'
+    
+    st.markdown(html_table_horas, unsafe_allow_html=True)
+    
+    # Análisis adicional destacando horarios pico
+    st.markdown("#### 🔥 Análisis de Horarios Pico")
     
     tabla_horas = tabla_cobertura.drop('TOTAL', errors='ignore')
     
-    # Definir franjas horarias
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Horarios Pico Identificados:**")
+        # Mañana pico (10-12)
+        horas_mañana_pico = [10, 11, 12]
+        horas_validas_mañana = [h for h in horas_mañana_pico if h in tabla_horas.index]
+        if horas_validas_mañana:
+            subtotal_mañana = tabla_horas.loc[horas_validas_mañana, 'TOTAL'].sum() if 'TOTAL' in tabla_horas.columns else tabla_horas.loc[horas_validas_mañana].sum(axis=1).sum()
+        else:
+            subtotal_mañana = 0
+        st.metric("☀️ Mañana Pico (10-12h)", int(subtotal_mañana), "leads")
+    
+    with col2:
+        # Tarde pico (14-16)
+        horas_tarde_pico = [14, 15, 16]
+        horas_validas_tarde = [h for h in horas_tarde_pico if h in tabla_horas.index]
+        if horas_validas_tarde:
+            subtotal_tarde = tabla_horas.loc[horas_validas_tarde, 'TOTAL'].sum() if 'TOTAL' in tabla_horas.columns else tabla_horas.loc[horas_validas_tarde].sum(axis=1).sum()
+        else:
+            subtotal_tarde = 0
+        st.metric("🌅 Tarde Pico (14-16h)", int(subtotal_tarde), "leads")
+    
+    # Franjas horarias generales
+    st.markdown("**Desglose por Franja Horaria:**")
+    
     franjas = {
         'Madrugada (0-6h)': [h for h in range(0, 7)],
         'Mañana (7-12h)': [h for h in range(7, 13)],
