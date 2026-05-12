@@ -1568,8 +1568,7 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
 
 @st.cache_data(ttl=3600)
 def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
-    """Obtiene historial detallado de transacciones por asesor en el DRIVE
-    Filtra por fecha actual para no mostrar registros futuros"""
+    """Obtiene historial detallado de transacciones por asesor en el DRIVE"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
@@ -1589,10 +1588,6 @@ def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
     
     # Limpiar fechas
     df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
-    
-    # FILTRO POR FECHA ACTUAL - no mostrar fechas futuras
-    fecha_actual = pd.Timestamp.today()
-    df_asesor = df_asesor[df_asesor['FECHA'] <= fecha_actual]
     
     # Ordenar por fecha
     df_asesor = df_asesor.sort_values('FECHA')
@@ -1758,7 +1753,8 @@ def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
     """Obtiene el conteo de PAGO (sin importar estado) agrupado por semana
     Rangos de semana personalizados por mes:
     Mayo: Semana 1 (1-3), Semana 2 (4-10), Semana 3 (11-17), Semana 4 (18-24), Semana 5 (25-31)
-    Otros meses: Semana 1 (1-5), Semana 2 (6-12), Semana 3 (13-19), Semana 4 (20-26), Semana 5 (27-30)"""
+    Otros meses: Semana 1 (1-5), Semana 2 (6-12), Semana 3 (13-19), Semana 4 (20-26), Semana 5 (27-30)
+    NOTA: Las ventas del mes anterior se cuentan en Semana 1"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
@@ -1768,14 +1764,28 @@ def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
     df_asesor['PAGO'] = df_asesor['PAGO'].astype(str).str.strip()
     
     # Filtrar solo registros con PAGO (no vacío)
-    df_con_pago = df_asesor[(df_asesor['PAGO'] != '') & (df_asesor['PAGO'] != 'nan') & (df_asesor['PAGO'].notna())]
+    df_con_pago = df_asesor[(df_asesor['PAGO'] != '') & (df_asesor['PAGO'] != 'nan') & (df_asesor['PAGO'].notna())].copy()
     
     if df_con_pago.empty:
         return pd.DataFrame()
     
+    # Mapeo de meses a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num_seleccionado = mes_numeros.get(mes_seleccionado, 5)
+    
     # Crear etiqueta descriptiva para cada semana según rangos específicos por mes
     def get_semana_label(row):
-        day = row['FECHA'].day
+        fecha = row['FECHA']
+        day = fecha.day
+        mes_fecha = fecha.month
+        
+        # Si la fecha es de un mes diferente (mes anterior), asignarla al inicio (NUM_SEMANA = 0)
+        if mes_fecha != mes_num_seleccionado:
+            return (0, "Semana 1 (Mes Anterior)")
         
         # Rangos específicos para Mayo
         if mes_seleccionado == "Mayo":
@@ -4098,7 +4108,7 @@ if not tabla_cobertura.empty:
         ))
         
         # Destacar franjas horarias pico (10-12 y 14-16)
-        horas_pico = [10, 11, 14, 15, 16]
+        horas_pico = [10, 11, 12, 14, 15, 16]
         for hora_pico in horas_pico:
             if hora_pico in datos_plot.index:
                 fig_horas.add_vline(
@@ -4147,19 +4157,27 @@ if not tabla_cobertura.empty:
     # Renombrar columnas de fecha para que sean más legibles
     tabla_display.columns = ['Hora'] + [str(col).split()[0] if col != 'TOTAL' else 'TOTAL' for col in tabla_display.columns[1:]]
     
-    # Crear tabla HTML con colores para horas pico
-    html_table_horas = '<table style="width:100%; border-collapse: collapse; margin: 20px auto;">'
+    # Crear tabla HTML con colores para horas pico - COMPACTA
+    html_table_horas = '<table style="width:100%; border-collapse: collapse; margin: 5px auto; font-size: 11px;">'
     
     # Encabezado
     html_table_horas += '<tr style="background-color: #f0f2f6; border-bottom: 2px solid #ddd;">'
     for col in tabla_display.columns:
-        html_table_horas += f'<th style="padding: 12px; text-align: center; border-right: 1px solid #ddd;">{col}</th>'
+        html_table_horas += f'<th style="padding: 4px; text-align: center; border-right: 1px solid #ddd; font-size: 10px;">{col}</th>'
     html_table_horas += '</tr>'
     
     # Filas de datos
-    horas_pico = [10, 11, 14, 15, 16]
+    horas_pico = [10, 11, 12, 14, 15, 16]
     for idx, row in tabla_display.iterrows():
-        hora = int(row['Hora'])
+        # Saltar la fila de TOTAL
+        if str(row['Hora']).upper() == 'TOTAL':
+            continue
+            
+        try:
+            hora = int(row['Hora'])
+        except (ValueError, TypeError):
+            continue
+            
         es_pico = hora in horas_pico
         bg_color = '#fef08a' if es_pico else '#ffffff'  # Amarillo para pico, blanco para normal
         border_left = '5px solid #ef4444' if es_pico else '1px solid #eee'  # Rojo para pico
@@ -4173,10 +4191,19 @@ if not tabla_cobertura.empty:
             color = '#ef4444' if es_pico and is_total else '#1e293b'
             
             if es_pico and col_idx == 0:
-                html_table_horas += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color};"><span style="background-color: #ef4444; color: white; padding: 2px 6px; border-radius: 3px;">🔥 {valor}</span></td>'
+                html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;"><span style="background-color: #ef4444; color: white; padding: 1px 3px; border-radius: 2px; font-size: 9px;">🔥 {valor}</span></td>'
             else:
-                html_table_horas += f'<td style="padding: 12px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color};">{valor}</td>'
+                html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;">{valor}</td>'
         
+        html_table_horas += '</tr>'
+    
+    # Agregar fila de TOTAL al final
+    total_row = tabla_display[tabla_display['Hora'] == 'TOTAL']
+    if not total_row.empty:
+        html_table_horas += '<tr style="background-color: #f0f2f6; border-top: 2px solid #ddd; font-weight: bold;">'
+        for col in tabla_display.columns:
+            valor = total_row[col].values[0] if col in total_row.columns else 0
+            html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #ddd; font-weight: bold; font-size: 11px;">{valor}</td>'
         html_table_horas += '</tr>'
     
     html_table_horas += '</table>'
