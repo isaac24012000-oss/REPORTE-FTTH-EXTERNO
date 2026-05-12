@@ -1751,7 +1751,9 @@ def get_crecimiento_ventas(asesor, mes_seleccionado="Marzo"):
 @st.cache_data(ttl=3600)
 def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
     """Obtiene el conteo de PAGO (sin importar estado) agrupado por semana
-    Semana 1: 1-5, Semana 2: 6-12, Semana 3: 13-19, Semana 4: 20-26, Semana 5: 27-30"""
+    Rangos de semana personalizados por mes:
+    Mayo: Semana 1 (1-3), Semana 2 (4-10), Semana 3 (11-17), Semana 4 (18-24), Semana 5 (25-31)
+    Otros meses: Semana 1 (1-5), Semana 2 (6-12), Semana 3 (13-19), Semana 4 (20-26), Semana 5 (27-30)"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
@@ -1766,19 +1768,34 @@ def get_crecimiento_ventas_semanal(asesor, mes_seleccionado="Marzo"):
     if df_con_pago.empty:
         return pd.DataFrame()
     
-    # Crear etiqueta descriptiva para cada semana según rangos específicos
+    # Crear etiqueta descriptiva para cada semana según rangos específicos por mes
     def get_semana_label(row):
         day = row['FECHA'].day
-        if day <= 5:
-            return (1, "Semana 1 (1-5)")
-        elif day <= 12:
-            return (2, "Semana 2 (6-12)")
-        elif day <= 19:
-            return (3, "Semana 3 (13-19)")
-        elif day <= 26:
-            return (4, "Semana 4 (20-26)")
+        
+        # Rangos específicos para Mayo
+        if mes_seleccionado == "Mayo":
+            if day <= 3:
+                return (1, "Semana 1 (1-3)")
+            elif day <= 10:
+                return (2, "Semana 2 (4-10)")
+            elif day <= 17:
+                return (3, "Semana 3 (11-17)")
+            elif day <= 24:
+                return (4, "Semana 4 (18-24)")
+            else:
+                return (5, "Semana 5 (25-31)")
         else:
-            return (5, "Semana 5 (27-30)")
+            # Rangos por defecto para otros meses
+            if day <= 5:
+                return (1, "Semana 1 (1-5)")
+            elif day <= 12:
+                return (2, "Semana 2 (6-12)")
+            elif day <= 19:
+                return (3, "Semana 3 (13-19)")
+            elif day <= 26:
+                return (4, "Semana 4 (20-26)")
+            else:
+                return (5, "Semana 5 (27-30)")
     
     df_con_pago[['NUM_SEMANA', 'LABEL_SEMANA']] = df_con_pago.apply(lambda row: pd.Series(get_semana_label(row)), axis=1)
     
