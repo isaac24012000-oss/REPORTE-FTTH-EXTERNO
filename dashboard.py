@@ -1568,7 +1568,8 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
 
 @st.cache_data(ttl=3600)
 def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
-    """Obtiene historial detallado de transacciones por asesor en el DRIVE"""
+    """Obtiene historial detallado de transacciones por asesor en el DRIVE
+    Filtra por fecha actual para no mostrar registros futuros"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
@@ -1588,6 +1589,10 @@ def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
     
     # Limpiar fechas
     df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
+    
+    # FILTRO POR FECHA ACTUAL - no mostrar fechas futuras
+    fecha_actual = pd.Timestamp.today()
+    df_asesor = df_asesor[df_asesor['FECHA'] <= fecha_actual]
     
     # Ordenar por fecha
     df_asesor = df_asesor.sort_values('FECHA')
