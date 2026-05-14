@@ -1919,6 +1919,36 @@ def load_metas_data():
     except Exception as e:
         return None
 
+def get_semana_actual(mes_seleccionado="Mayo"):
+    """Determina la semana actual basada en la fecha de hoy y los rangos de semanas del mes"""
+    hoy = datetime.now().date()
+    day = hoy.day
+    
+    # Rangos específicos para Mayo
+    if mes_seleccionado == "Mayo":
+        if day <= 3:
+            return 1
+        elif day <= 10:
+            return 2
+        elif day <= 17:
+            return 3
+        elif day <= 24:
+            return 4
+        else:
+            return 5
+    else:
+        # Rangos por defecto para otros meses
+        if day <= 5:
+            return 1
+        elif day <= 12:
+            return 2
+        elif day <= 19:
+            return 3
+        elif day <= 26:
+            return 4
+        else:
+            return 5
+
 @st.cache_data(ttl=60)
 def get_cumplimiento_metas_analisis(asesor_seleccionado, mes_seleccionado="Mayo"):
     """Calcula el análisis de cumplimiento de metas: compara ventas vs metas diarias, semanales y mensuales"""
@@ -1950,28 +1980,70 @@ def get_cumplimiento_metas_analisis(asesor_seleccionado, mes_seleccionado="Mayo"
     if df_asesor_drive.empty:
         ventas_diarias = {}
         ventas_semanales = {}
-        ventas_totales = 0
+        ventas_totales_todos = 0
+        progreso_semana_actual = 0
     else:
         df_asesor_drive['FECHA'] = pd.to_datetime(df_asesor_drive['FECHA'], errors='coerce')
         df_asesor_drive['ESTADO'] = df_asesor_drive['ESTADO'].astype(str).str.strip()
         
-        # Solo contar INSTALADO
-        df_instaladas = df_asesor_drive[df_asesor_drive['ESTADO'] == 'INSTALADO']
+        # Total de TODAS las ventas brutas (INSTALADO + PENDIENTE + CANCELADO)
+        ventas_totales_todos = len(df_asesor_drive)
         
-        # Ventas por día (solo INSTALADO)
-        ventas_diarias_counts = df_instaladas.groupby(df_instaladas['FECHA'].dt.date).size()
+        # Ventas por día (TODAS las ventas brutas)
+        ventas_diarias_counts = df_asesor_drive.groupby(df_asesor_drive['FECHA'].dt.date).size()
         ventas_diarias = ventas_diarias_counts.to_dict()
         
-        # Ventas por semana (solo INSTALADO)
-        df_instaladas['SEMANA'] = df_instaladas['FECHA'].dt.isocalendar().week
-        ventas_semanales_counts = df_instaladas.groupby('SEMANA').size()
+        # Ventas por semana (TODAS las ventas brutas)
+        df_asesor_drive['SEMANA'] = df_asesor_drive['FECHA'].dt.isocalendar().week
+        ventas_semanales_counts = df_asesor_drive.groupby('SEMANA').size()
         ventas_semanales = ventas_semanales_counts.to_dict()
         
-        # Total de ventas (solo INSTALADO)
-        ventas_totales = len(df_instaladas)
+        # Calcular progreso de la semana actual
+        semana_actual = get_semana_actual(mes_seleccionado)
+        progreso_semana_actual = 0
+        
+        # Mapeo de meses a números
+        mes_numeros = {
+            'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+            'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+            'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+        }
+        mes_num_seleccionado = mes_numeros.get(mes_seleccionado, 5)
+        
+        # Obtener rango de días de la semana actual
+        if mes_seleccionado == "Mayo":
+            if semana_actual == 1:
+                rango_inicio, rango_fin = 1, 3
+            elif semana_actual == 2:
+                rango_inicio, rango_fin = 4, 10
+            elif semana_actual == 3:
+                rango_inicio, rango_fin = 11, 17
+            elif semana_actual == 4:
+                rango_inicio, rango_fin = 18, 24
+            else:
+                rango_inicio, rango_fin = 25, 31
+        else:
+            if semana_actual == 1:
+                rango_inicio, rango_fin = 1, 5
+            elif semana_actual == 2:
+                rango_inicio, rango_fin = 6, 12
+            elif semana_actual == 3:
+                rango_inicio, rango_fin = 13, 19
+            elif semana_actual == 4:
+                rango_inicio, rango_fin = 20, 26
+            else:
+                rango_inicio, rango_fin = 27, 31
+        
+        # Filtrar ventas de la semana actual
+        df_semana_actual = df_asesor_drive[
+            (df_asesor_drive['FECHA'].dt.day >= rango_inicio) &
+            (df_asesor_drive['FECHA'].dt.day <= rango_fin) &
+            (df_asesor_drive['FECHA'].dt.month == mes_num_seleccionado)
+        ]
+        progreso_semana_actual = len(df_semana_actual)
     
-    # Calcular cumplimiento
-    promedio_diario = ventas_totales / max(1, len(ventas_diarias)) if ventas_diarias else 0
+    # Calcular cumplimiento usando TODAS las ventas brutas
+    promedio_diario = ventas_totales_todos / max(1, len(ventas_diarias)) if ventas_diarias else 0
     
     analisis = {
         'meta_diaria': meta_diaria,
@@ -1979,12 +2051,14 @@ def get_cumplimiento_metas_analisis(asesor_seleccionado, mes_seleccionado="Mayo"
         'meta_mensual': meta_mensual,
         'ventas_diarias': ventas_diarias,
         'ventas_semanales': ventas_semanales,
-        'ventas_totales': ventas_totales,
+        'ventas_totales_todos': ventas_totales_todos,
         'promedio_diario': promedio_diario,
-        'cumplimiento_mensual': (ventas_totales / max(1, meta_mensual) * 100),
+        'cumplimiento_mensual': (ventas_totales_todos / max(1, meta_mensual) * 100),
         'cumplimiento_diario_prom': (promedio_diario / max(1, meta_diaria) * 100),
         'dias_trabajados': len(ventas_diarias),
-        'semanas_activas': len(ventas_semanales)
+        'semanas_activas': len(ventas_semanales),
+        'progreso_semana_actual': progreso_semana_actual,
+        'cumplimiento_semanal_actual': (progreso_semana_actual / max(1, meta_semanal) * 100)
     }
     
     return analisis
@@ -2008,9 +2082,8 @@ def get_comparativa_metas_todos(mes_seleccionado="Mayo"):
         df_asesor_drive = get_drive_history_by_asesor(asesor, mes_seleccionado)
         
         if not df_asesor_drive.empty:
-            df_asesor_drive['ESTADO'] = df_asesor_drive['ESTADO'].astype(str).str.strip()
-            # Solo contar INSTALADO
-            ventas_reales = len(df_asesor_drive[df_asesor_drive['ESTADO'] == 'INSTALADO'])
+            # Contar TODAS las ventas brutas (INSTALADO + PENDIENTE + CANCELADO)
+            ventas_reales = len(df_asesor_drive)
         else:
             ventas_reales = 0
         
@@ -4146,15 +4219,17 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                         st.metric(
                             "Cumplimiento Mensual",
                             f"{color_cumpl} {analisis_metas['cumplimiento_mensual']:.0f}%",
-                            f"Meta: {int(analisis_metas['meta_mensual'])} | Real: {int(analisis_metas['ventas_totales'])}"
+                            f"Meta: {int(analisis_metas['meta_mensual'])} | Real: {int(analisis_metas['ventas_totales_todos'])}"
                         )
                     
                     with col_met2:
-                        color_prom_diario = "🟢" if analisis_metas['cumplimiento_diario_prom'] >= 100 else "🟡" if analisis_metas['cumplimiento_diario_prom'] >= 80 else "🔴"
+                        color_semanal = "🟢" if analisis_metas['cumplimiento_semanal_actual'] >= 100 else "🟡" if analisis_metas['cumplimiento_semanal_actual'] >= 80 else "🔴"
+                        brecha_semanal = int(analisis_metas['progreso_semana_actual']) - int(analisis_metas['meta_semanal'])
+                        brecha_text = f"Falta: {abs(brecha_semanal)}" if brecha_semanal < 0 else f"Sobra: +{brecha_semanal}"
                         st.metric(
-                            "Promedio Diario vs Meta",
-                            f"{color_prom_diario} {analisis_metas['cumplimiento_diario_prom']:.0f}%",
-                            f"Meta: {int(analisis_metas['meta_diaria'])} | Real: {analisis_metas['promedio_diario']:.1f}"
+                            "Meta Semanal vs Progreso",
+                            f"{color_semanal} {analisis_metas['cumplimiento_semanal_actual']:.0f}%",
+                            f"Meta: {int(analisis_metas['meta_semanal'])} | Real: {int(analisis_metas['progreso_semana_actual'])} | {brecha_text}"
                         )
                     
                     with col_met3:
@@ -4164,27 +4239,32 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                             f"{int(analisis_metas['semanas_activas'])} semanas activas"
                         )
                     
-                    # Gráfico: Metas vs Ventas Reales
+                    # Gráfico: Metas vs Ventas Brutas
                     df_metas_comparativa = pd.DataFrame({
-                        'Tipo': ['Meta Mensual', 'Ventas Reales'],
-                        'Cantidad': [int(analisis_metas['meta_mensual']), int(analisis_metas['ventas_totales'])]
+                        'Tipo': ['Meta Mensual', 'Ventas Brutas (Real)'],
+                        'Cantidad': [
+                            int(analisis_metas['meta_mensual']), 
+                            int(analisis_metas['ventas_totales_todos'])
+                        ]
                     })
+                    
+                    # Determinar colores: azul para meta, verde si cumple/supera, rojo si no
+                    color_ventas = '#10b981' if analisis_metas['ventas_totales_todos'] >= analisis_metas['meta_mensual'] else '#ef4444'
+                    colores = ['#0066cc', color_ventas]
                     
                     fig_metas_comp = go.Figure(data=[
                         go.Bar(
                             x=df_metas_comparativa['Tipo'],
                             y=df_metas_comparativa['Cantidad'],
-                            marker=dict(
-                                color=['#0066cc', '#10b981' if analisis_metas['ventas_totales'] >= analisis_metas['meta_mensual'] else '#ef4444']
-                            ),
+                            marker=dict(color=colores),
                             text=df_metas_comparativa['Cantidad'],
                             textposition='auto',
-                            name='Comparativa'
+                            name='Cantidad'
                         )
                     ])
                     
                     fig_metas_comp.update_layout(
-                        title=f"Metas vs Ventas Reales - {mes}",
+                        title=f"Cumplimiento de Meta - Ventas Brutas (INSTALADAS + PENDIENTES + CANCELADAS) - {mes}",
                         yaxis_title="Cantidad",
                         height=350,
                         showlegend=False,
@@ -4195,34 +4275,75 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     
                     st.plotly_chart(fig_metas_comp, use_container_width=True)
                     
-                    # Tabla: Desempeño por Semana
+                    # Mostrar status de cumplimiento
+                    brecha = int(analisis_metas['ventas_totales_todos']) - int(analisis_metas['meta_mensual'])
+                    col_stat1, col_stat2 = st.columns(2)
+                    with col_stat1:
+                        st.metric("Meta Mensual", int(analisis_metas['meta_mensual']))
+                    with col_stat2:
+                        if brecha >= 0:
+                            st.metric("Ventas Brutas", int(analisis_metas['ventas_totales_todos']), f"✅ +{brecha} ventas (cumplió)")
+                        else:
+                            st.metric("Ventas Brutas", int(analisis_metas['ventas_totales_todos']), f"❌ {brecha} ventas (falta)")
+                    
+                    # Gráfico: Desempeño por Semana (VENTAS BRUTAS)
                     if analisis_metas['ventas_semanales']:
-                        st.markdown("##### 📋 Desempeño por Semana")
+                        st.markdown("##### 📋 Desempeño por Semana (Ventas Brutas)")
                         
                         df_semanas = pd.DataFrame([
-                            {'Semana': f"Semana {sem}", 'Ventas': ventas, 'Meta Semanal': int(analisis_metas['meta_semanal']), 
+                            {'Semana': f"Semana {sem}", 'Ventas Brutas': ventas, 'Meta Semanal': int(analisis_metas['meta_semanal']), 
                              'Cumplimiento %': (ventas / analisis_metas['meta_semanal'] * 100) if analisis_metas['meta_semanal'] > 0 else 0}
                             for sem, ventas in sorted(analisis_metas['ventas_semanales'].items())
                         ])
                         
-                        # Aplicar colores según cumplimiento
-                        def color_cumplimiento(val):
-                            if val >= 100:
-                                return 'background-color: #d4edda'  # Verde
-                            elif val >= 80:
-                                return 'background-color: #fff3cd'  # Amarillo
-                            else:
-                                return 'background-color: #f8d7da'  # Rojo
+                        # Gráfico de barras: Ventas Brutas por semana con línea de meta
+                        fig_semanas = go.Figure()
                         
+                        fig_semanas.add_trace(go.Bar(
+                            x=df_semanas['Semana'],
+                            y=df_semanas['Ventas Brutas'],
+                            marker=dict(color=['#10b981' if v >= analisis_metas['meta_semanal'] else '#ff6b6b' for v in df_semanas['Ventas Brutas']]),
+                            text=df_semanas['Ventas Brutas'],
+                            textposition='auto',
+                            name='Ventas Brutas'
+                        ))
+                        
+                        # Línea de meta semanal
+                        fig_semanas.add_hline(
+                            y=analisis_metas['meta_semanal'],
+                            line_dash="dash",
+                            line_color="blue",
+                            annotation_text=f"Meta Semanal: {int(analisis_metas['meta_semanal'])}",
+                            annotation_position="right"
+                        )
+                        
+                        fig_semanas.update_layout(
+                            title=f"Ventas Brutas por Semana - {mes}",
+                            xaxis_title="Semana",
+                            yaxis_title="Cantidad de Ventas Brutas",
+                            height=350,
+                            showlegend=False,
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(showgrid=False),
+                            yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                        )
+                        
+                        st.plotly_chart(fig_semanas, use_container_width=True)
+                        
+                        # Tabla: Desempeño por Semana detallado
                         df_semanas_display = df_semanas.copy()
                         df_semanas_display['Cumplimiento %'] = df_semanas_display['Cumplimiento %'].apply(lambda x: f"{x:.0f}%")
+                        df_semanas_display['Estado'] = df_semanas_display.apply(
+                            lambda x: '✅ Cumplió' if x['Cumplimiento %'].rstrip('%') >= '100' else '⚠️ En progreso' if x['Cumplimiento %'].rstrip('%') >= '80' else '❌ Bajo meta', 
+                            axis=1
+                        )
                         
-                        st.dataframe(df_semanas_display, use_container_width=True, hide_index=True)
+                        st.dataframe(df_semanas_display[['Semana', 'Ventas Brutas', 'Meta Semanal', 'Cumplimiento %', 'Estado']], use_container_width=True, hide_index=True)
                     
                     # Oportunidades de Mejora Individual
                     st.markdown("##### 💡 Oportunidades de Mejora")
                     
-                    brecha_mensual = int(analisis_metas['meta_mensual']) - int(analisis_metas['ventas_totales'])
+                    brecha_mensual = int(analisis_metas['meta_mensual']) - int(analisis_metas['ventas_totales_todos'])
                     
                     if brecha_mensual > 0:
                         st.warning(f"⚠️ **Brecha Actual**: Necesita {brecha_mensual} ventas más para cumplir la meta mensual")
