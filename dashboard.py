@@ -1902,6 +1902,169 @@ def get_recomendaciones_asesor(asesor, kpis, mes_seleccionado="Marzo"):
     
     return recomendaciones
 
+# ============= ANÁLISIS DE METAS =============
+
+@st.cache_data(ttl=3600)
+def load_metas_data():
+    """Carga los datos de metas de la hoja METAS del archivo REPORTE FTTH.xlsx"""
+    excel_path = os.path.join(os.path.dirname(__file__), 'REPORTE FTTH.xlsx')
+    
+    try:
+        df_metas = pd.read_excel(excel_path, sheet_name='METAS')
+        # Limpiar columnas
+        df_metas.columns = df_metas.columns.str.strip()
+        # Mapeo de nombres de asesores para evitar inconsistencias
+        df_metas['ASESOR'] = df_metas['ASESOR'].astype(str).str.strip()
+        return df_metas
+    except Exception as e:
+        return None
+
+@st.cache_data(ttl=60)
+def get_cumplimiento_metas_analisis(asesor_seleccionado, mes_seleccionado="Mayo"):
+    """Calcula el análisis de cumplimiento de metas: compara ventas vs metas diarias, semanales y mensuales"""
+    df_metas = load_metas_data()
+    df_drive = load_drive_data()
+    
+    if df_metas is None or df_drive is None:
+        return None
+    
+    # Obtener metas del asesor
+    if asesor_seleccionado == "Todos":
+        # Si es Todos, retornar análisis de todos los asesores
+        return None  # Se manejará de forma diferente
+    
+    # Buscar el asesor en la hoja METAS
+    metas_asesor = df_metas[df_metas['ASESOR'] == asesor_seleccionado]
+    
+    if metas_asesor.empty:
+        return None
+    
+    # Extraer metas
+    meta_diaria = metas_asesor['Meta Diaria'].values[0]
+    meta_semanal = metas_asesor['Meta semanal'].values[0]
+    meta_mensual = metas_asesor['Meta Mensual'].values[0]
+    
+    # Obtener ventas del asesor en el mes
+    df_asesor_drive = get_drive_history_by_asesor(asesor_seleccionado, mes_seleccionado)
+    
+    if df_asesor_drive.empty:
+        ventas_diarias = {}
+        ventas_semanales = {}
+        ventas_totales = 0
+    else:
+        df_asesor_drive['FECHA'] = pd.to_datetime(df_asesor_drive['FECHA'], errors='coerce')
+        df_asesor_drive['ESTADO'] = df_asesor_drive['ESTADO'].astype(str).str.strip()
+        
+        # Solo contar INSTALADO
+        df_instaladas = df_asesor_drive[df_asesor_drive['ESTADO'] == 'INSTALADO']
+        
+        # Ventas por día (solo INSTALADO)
+        ventas_diarias_counts = df_instaladas.groupby(df_instaladas['FECHA'].dt.date).size()
+        ventas_diarias = ventas_diarias_counts.to_dict()
+        
+        # Ventas por semana (solo INSTALADO)
+        df_instaladas['SEMANA'] = df_instaladas['FECHA'].dt.isocalendar().week
+        ventas_semanales_counts = df_instaladas.groupby('SEMANA').size()
+        ventas_semanales = ventas_semanales_counts.to_dict()
+        
+        # Total de ventas (solo INSTALADO)
+        ventas_totales = len(df_instaladas)
+    
+    # Calcular cumplimiento
+    promedio_diario = ventas_totales / max(1, len(ventas_diarias)) if ventas_diarias else 0
+    
+    analisis = {
+        'meta_diaria': meta_diaria,
+        'meta_semanal': meta_semanal,
+        'meta_mensual': meta_mensual,
+        'ventas_diarias': ventas_diarias,
+        'ventas_semanales': ventas_semanales,
+        'ventas_totales': ventas_totales,
+        'promedio_diario': promedio_diario,
+        'cumplimiento_mensual': (ventas_totales / max(1, meta_mensual) * 100),
+        'cumplimiento_diario_prom': (promedio_diario / max(1, meta_diaria) * 100),
+        'dias_trabajados': len(ventas_diarias),
+        'semanas_activas': len(ventas_semanales)
+    }
+    
+    return analisis
+
+@st.cache_data(ttl=60)
+def get_comparativa_metas_todos(mes_seleccionado="Mayo"):
+    """Obtiene comparativa de todos los asesores: metas vs ventas reales"""
+    df_metas = load_metas_data()
+    df_drive = load_drive_data()
+    
+    if df_metas is None or df_drive is None:
+        return pd.DataFrame()
+    
+    resultados = []
+    
+    for idx, row in df_metas.iterrows():
+        asesor = row['ASESOR']
+        meta_mensual = row['Meta Mensual']
+        
+        # Obtener ventas del asesor
+        df_asesor_drive = get_drive_history_by_asesor(asesor, mes_seleccionado)
+        
+        if not df_asesor_drive.empty:
+            df_asesor_drive['ESTADO'] = df_asesor_drive['ESTADO'].astype(str).str.strip()
+            # Solo contar INSTALADO
+            ventas_reales = len(df_asesor_drive[df_asesor_drive['ESTADO'] == 'INSTALADO'])
+        else:
+            ventas_reales = 0
+        
+        cumplimiento = (ventas_reales / max(1, meta_mensual) * 100) if meta_mensual > 0 else 0
+        
+        # Determinar estado
+        if cumplimiento >= 100:
+            estado = "✅ Cumpliendo"
+            color = "#10b981"
+        elif cumplimiento >= 80:
+            estado = "🟡 Acercándose"
+            color = "#f59e0b"
+        elif cumplimiento >= 50:
+            estado = "🔴 Retrasado"
+            color = "#f97316"
+        else:
+            estado = "❌ Crítico"
+            color = "#ef4444"
+        
+        # Brecha
+        brecha = ventas_reales - meta_mensual
+        
+        resultados.append({
+            'Asesor': asesor,
+            'Meta': meta_mensual,
+            'Ventas': ventas_reales,
+            'Cumplimiento': cumplimiento,
+            'Estado': estado,
+            'Color': color,
+            'Brecha': brecha
+        })
+    
+    df_resultados = pd.DataFrame(resultados)
+    return df_resultados
+
+@st.cache_data(ttl=60)
+def get_oportunidades_mejora(mes_seleccionado="Mayo"):
+    """Identifica oportunidades de mejora basadas en cumplimiento de metas"""
+    df_comparativa = get_comparativa_metas_todos(mes_seleccionado)
+    
+    if df_comparativa.empty:
+        return {}
+    
+    oportunidades = {
+        'asesores_bajo_cumplimiento': df_comparativa[df_comparativa['Cumplimiento'] < 50].sort_values('Cumplimiento'),
+        'asesores_excelentes': df_comparativa[df_comparativa['Cumplimiento'] >= 100].sort_values('Cumplimiento', ascending=False),
+        'promedio_equipo': df_comparativa['Cumplimiento'].mean(),
+        'brecha_total': df_comparativa['Brecha'].sum(),
+        'total_asesores': len(df_comparativa),
+        'asesores_en_riesgo': len(df_comparativa[df_comparativa['Cumplimiento'] < 50])
+    }
+    
+    return oportunidades
+
 # Estilos mejorados con tema moderno y premium - CACHEADO
 @st.cache_data(ttl=86400)  # Cache por 24 horas
 def apply_custom_css():
@@ -3777,8 +3940,8 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
         # FILA 2C: GRÁFICA DE CRECIMIENTO DE VENTAS
         st.markdown("#### 📈 Crecimiento de Ventas por Fecha")
         
-        # Tabs para seleccionar vista por Día o Semana
-        tab_dia, tab_semana = st.tabs(["📅 Por Día", "📊 Por Semana"])
+        # Tabs para seleccionar vista por Día, Semana o Análisis de Metas
+        tab_dia, tab_semana, tab_metas = st.tabs(["📅 Por Día", "📊 Por Semana", "🎯 Análisis de Metas"])
         
         # TAB 1: Visualización por Día
         with tab_dia:
@@ -3965,6 +4128,200 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                         st.metric("🔴 Semanas Bajo el Promedio", f"{semanas_bajo}/{semanas_con_datos}")
             else:
                 st.info("No hay datos de PAGO por semana para este mes")
+        
+        # TAB 3: Análisis de Metas
+        with tab_metas:
+            st.markdown("##### 📊 Análisis de Cumplimiento de Metas")
+            
+            if asesor_seleccionado != "Todos":
+                # Análisis individual
+                analisis_metas = get_cumplimiento_metas_analisis(asesor_seleccionado, mes)
+                
+                if analisis_metas is not None:
+                    # KPIs de Metas
+                    col_met1, col_met2, col_met3 = st.columns(3)
+                    
+                    with col_met1:
+                        color_cumpl = "🟢" if analisis_metas['cumplimiento_mensual'] >= 100 else "🟡" if analisis_metas['cumplimiento_mensual'] >= 80 else "🔴"
+                        st.metric(
+                            "Cumplimiento Mensual",
+                            f"{color_cumpl} {analisis_metas['cumplimiento_mensual']:.0f}%",
+                            f"Meta: {int(analisis_metas['meta_mensual'])} | Real: {int(analisis_metas['ventas_totales'])}"
+                        )
+                    
+                    with col_met2:
+                        color_prom_diario = "🟢" if analisis_metas['cumplimiento_diario_prom'] >= 100 else "🟡" if analisis_metas['cumplimiento_diario_prom'] >= 80 else "🔴"
+                        st.metric(
+                            "Promedio Diario vs Meta",
+                            f"{color_prom_diario} {analisis_metas['cumplimiento_diario_prom']:.0f}%",
+                            f"Meta: {int(analisis_metas['meta_diaria'])} | Real: {analisis_metas['promedio_diario']:.1f}"
+                        )
+                    
+                    with col_met3:
+                        st.metric(
+                            "Información",
+                            f"{int(analisis_metas['dias_trabajados'])} días",
+                            f"{int(analisis_metas['semanas_activas'])} semanas activas"
+                        )
+                    
+                    # Gráfico: Metas vs Ventas Reales
+                    df_metas_comparativa = pd.DataFrame({
+                        'Tipo': ['Meta Mensual', 'Ventas Reales'],
+                        'Cantidad': [int(analisis_metas['meta_mensual']), int(analisis_metas['ventas_totales'])]
+                    })
+                    
+                    fig_metas_comp = go.Figure(data=[
+                        go.Bar(
+                            x=df_metas_comparativa['Tipo'],
+                            y=df_metas_comparativa['Cantidad'],
+                            marker=dict(
+                                color=['#0066cc', '#10b981' if analisis_metas['ventas_totales'] >= analisis_metas['meta_mensual'] else '#ef4444']
+                            ),
+                            text=df_metas_comparativa['Cantidad'],
+                            textposition='auto',
+                            name='Comparativa'
+                        )
+                    ])
+                    
+                    fig_metas_comp.update_layout(
+                        title=f"Metas vs Ventas Reales - {mes}",
+                        yaxis_title="Cantidad",
+                        height=350,
+                        showlegend=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                    )
+                    
+                    st.plotly_chart(fig_metas_comp, use_container_width=True)
+                    
+                    # Tabla: Desempeño por Semana
+                    if analisis_metas['ventas_semanales']:
+                        st.markdown("##### 📋 Desempeño por Semana")
+                        
+                        df_semanas = pd.DataFrame([
+                            {'Semana': f"Semana {sem}", 'Ventas': ventas, 'Meta Semanal': int(analisis_metas['meta_semanal']), 
+                             'Cumplimiento %': (ventas / analisis_metas['meta_semanal'] * 100) if analisis_metas['meta_semanal'] > 0 else 0}
+                            for sem, ventas in sorted(analisis_metas['ventas_semanales'].items())
+                        ])
+                        
+                        # Aplicar colores según cumplimiento
+                        def color_cumplimiento(val):
+                            if val >= 100:
+                                return 'background-color: #d4edda'  # Verde
+                            elif val >= 80:
+                                return 'background-color: #fff3cd'  # Amarillo
+                            else:
+                                return 'background-color: #f8d7da'  # Rojo
+                        
+                        df_semanas_display = df_semanas.copy()
+                        df_semanas_display['Cumplimiento %'] = df_semanas_display['Cumplimiento %'].apply(lambda x: f"{x:.0f}%")
+                        
+                        st.dataframe(df_semanas_display, use_container_width=True, hide_index=True)
+                    
+                    # Oportunidades de Mejora Individual
+                    st.markdown("##### 💡 Oportunidades de Mejora")
+                    
+                    brecha_mensual = int(analisis_metas['meta_mensual']) - int(analisis_metas['ventas_totales'])
+                    
+                    if brecha_mensual > 0:
+                        st.warning(f"⚠️ **Brecha Actual**: Necesita {brecha_mensual} ventas más para cumplir la meta mensual")
+                        
+                        dias_restantes = max(0, 30 - analisis_metas['dias_trabajados'])
+                        if dias_restantes > 0:
+                            ventas_diarias_necesarias = brecha_mensual / dias_restantes
+                            st.info(f"📈 **Ritmo Necesario**: {ventas_diarias_necesarias:.1f} ventas/día en los {dias_restantes} días restantes")
+                        else:
+                            st.error(f"⏰ **Mes Finalizado**: No hay días restantes. Cumplimiento final: {analisis_metas['cumplimiento_mensual']:.0f}%")
+                    else:
+                        st.success(f"✅ **Meta Cumplida**: Ha superado la meta por {abs(brecha_mensual)} ventas ({analisis_metas['cumplimiento_mensual']:.0f}%)")
+                else:
+                    st.warning("⚠️ No hay datos de metas disponibles para este asesor")
+            
+            else:
+                # Vista de Todos: Comparativa de todos los asesores
+                st.markdown("##### 📊 Cumplimiento de Metas - Todos los Asesores")
+                
+                df_comp = get_comparativa_metas_todos(mes)
+                
+                if not df_comp.empty:
+                    # KPIs de Equipo
+                    oportunidades = get_oportunidades_mejora(mes)
+                    
+                    col_eq1, col_eq2, col_eq3, col_eq4 = st.columns(4)
+                    
+                    with col_eq1:
+                        st.metric("Promedio Equipo", f"{oportunidades['promedio_equipo']:.0f}%", "Cumplimiento")
+                    
+                    with col_eq2:
+                        st.metric("Asesores en Riesgo", oportunidades['asesores_en_riesgo'], f"de {oportunidades['total_asesores']}")
+                    
+                    with col_eq3:
+                        st.metric("Asesores Excelentes", len(oportunidades['asesores_excelentes']), "100%+ cumplimiento")
+                    
+                    with col_eq4:
+                        st.metric("Brecha Total", int(oportunidades['brecha_total']), "ventas faltantes")
+                    
+                    # Gráfico: Cumplimiento de todos los asesores
+                    df_comp_sorted = df_comp.sort_values('Cumplimiento', ascending=True)
+                    
+                    fig_todos_metas = go.Figure(data=[
+                        go.Bar(
+                            y=df_comp_sorted['Asesor'],
+                            x=df_comp_sorted['Cumplimiento'],
+                            orientation='h',
+                            marker=dict(color=df_comp_sorted['Color']),
+                            text=df_comp_sorted['Cumplimiento'].apply(lambda x: f'{x:.0f}%'),
+                            textposition='outside',
+                            name='Cumplimiento'
+                        )
+                    ])
+                    
+                    fig_todos_metas.update_layout(
+                        title=f"Cumplimiento de Metas Mensuales - {mes}",
+                        xaxis_title="Cumplimiento (%)",
+                        yaxis_title="Asesor",
+                        height=600,
+                        showlegend=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray', range=[0, 130]),
+                        margin=dict(l=200, r=100, t=80, b=50)
+                    )
+                    
+                    st.plotly_chart(fig_todos_metas, use_container_width=True)
+                    
+                    # Tabla: Detalle de Cumplimiento
+                    st.markdown("##### 📋 Detalle Completo")
+                    
+                    df_tabla = df_comp[['Asesor', 'Meta', 'Ventas', 'Cumplimiento', 'Estado', 'Brecha']].copy()
+                    df_tabla['Cumplimiento'] = df_tabla['Cumplimiento'].apply(lambda x: f'{x:.0f}%')
+                    df_tabla.columns = ['Asesor', 'Meta', 'Ventas Reales', 'Cumplimiento %', 'Estado', 'Brecha']
+                    
+                    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                    
+                    # Oportunidades de Mejora del Equipo
+                    st.markdown("##### 💡 Oportunidades de Mejora del Equipo")
+                    
+                    if oportunidades['asesores_en_riesgo'] > 0:
+                        st.warning(f"⚠️ **Asesores en Riesgo**: {oportunidades['asesores_en_riesgo']} asesores están por debajo del 50% de cumplimiento")
+                        
+                        st.markdown("**Asesores Críticos:**")
+                        for idx, row in oportunidades['asesores_bajo_cumplimiento'].head(5).iterrows():
+                            brecha_ind = row['Brecha']
+                            st.write(f"- **{row['Asesor']}**: {row['Cumplimiento']:.0f}% ({int(row['Ventas'])}/{int(row['Meta'])} | Falta: {int(brecha_ind)})")
+                    
+                    if len(oportunidades['asesores_excelentes']) > 0:
+                        st.success(f"✅ **Asesores Excelentes**: {len(oportunidades['asesores_excelentes'])} asesores superaron la meta")
+                        
+                        st.markdown("**Top Performers:**")
+                        for idx, row in oportunidades['asesores_excelentes'].head(3).iterrows():
+                            exceso = row['Brecha']
+                            st.write(f"- **{row['Asesor']}**: {row['Cumplimiento']:.0f}% ({int(row['Ventas'])}/{int(row['Meta'])} | Exceso: {int(exceso)})")
+                    
+                    if oportunidades['promedio_equipo'] < 80:
+                        st.info(f"📈 **Recomendación**: El promedio del equipo es {oportunidades['promedio_equipo']:.0f}%. Enfoque en apoyar a los asesores rezagados")
+                else:
+                    st.warning("⚠️ No hay datos de metas disponibles")
         
         # FILA 3: RECOMENDACIONES PERSONALIZADAS
         st.markdown("#### 💡 Recomendaciones Personalizadas")
