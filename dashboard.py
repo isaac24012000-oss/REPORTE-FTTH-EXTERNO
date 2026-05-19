@@ -1573,9 +1573,10 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccion
     return tabla_pivot
 
 @st.cache_data(ttl=60)
-def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="Todos", hora_seleccionada=None, fecha_seleccionada=None):
+def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="Todos", hora_seleccionada="Todos", fecha_seleccionada=None):
     """Obtiene el detalle de quiénes (asesores) se conectaron con cobertura en una hora y fecha específica
-    Retorna un DataFrame con los asesores que tuvieron leads en esa combinación"""
+    Retorna un DataFrame con los asesores que tuvieron leads en esa combinación
+    Si hora_seleccionada es "Todos", no filtra por hora"""
     df_mantra = load_mantra_data()
     
     if df_mantra is None or df_mantra.empty:
@@ -1611,8 +1612,8 @@ def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="To
     df_cobertura = df_cobertura.dropna(subset=['HORA']).copy()
     df_cobertura['Hora'] = df_cobertura['HORA'].astype(int)
     
-    # Filtrar por hora si está especificada
-    if hora_seleccionada is not None:
+    # Filtrar por hora si está especificada (y no es "Todos")
+    if hora_seleccionada is not None and hora_seleccionada != "Todos":
         df_cobertura = df_cobertura[df_cobertura['Hora'] == hora_seleccionada]
     
     # Filtrar por fecha si está especificada
@@ -4831,17 +4832,27 @@ if not tabla_cobertura.empty:
     
     with col_hora:
         horas_disponibles = sorted([h for h in tabla_cobertura.index if isinstance(h, (int, float)) and h != 'TOTAL'])
-        hora_detalle = st.selectbox("Selecciona Hora", horas_disponibles, key="hora_detalle")
+        opciones_horas = ["Todos"] + horas_disponibles
+        hora_detalle_idx = st.selectbox("Selecciona Hora", range(len(opciones_horas)), format_func=lambda i: str(opciones_horas[i]), key="hora_detalle")
+        hora_detalle = opciones_horas[hora_detalle_idx]
     
     with col_fecha:
         fechas_disponibles = sorted([col for col in tabla_cobertura.columns if col != 'TOTAL'])
         fecha_detalle = st.selectbox("Selecciona Fecha", fechas_disponibles, key="fecha_detalle")
     
-    if hora_detalle is not None and fecha_detalle:
-        df_detalle = get_detalle_leads_cobertura(mes, asesor_filtro_cobertura, int(hora_detalle), str(fecha_detalle))
+    if fecha_detalle:
+        # Convertir hora_detalle a int si no es "Todos"
+        hora_filtro = "Todos" if hora_detalle == "Todos" else int(hora_detalle)
+        df_detalle = get_detalle_leads_cobertura(mes, asesor_filtro_cobertura, hora_filtro, str(fecha_detalle))
         
         if not df_detalle.empty:
-            st.markdown(f"**Leads con cobertura el {fecha_detalle} a las {int(hora_detalle)}:00h**")
+            # Generar el mensaje según si se filtró por hora o "Todos"
+            if hora_detalle == "Todos":
+                titulo = f"**Leads con cobertura el {fecha_detalle} (Todas las horas)**"
+            else:
+                titulo = f"**Leads con cobertura el {fecha_detalle} a las {int(hora_detalle)}:00h**"
+            
+            st.markdown(titulo)
             
             # Agrupar por Agente y contar
             resumen_asesores = df_detalle.groupby('Agente').size().reset_index(name='Cantidad').sort_values('Cantidad', ascending=False)
@@ -4859,7 +4870,11 @@ if not tabla_cobertura.empty:
                 columnas_mostrar = [col for col in df_detalle.columns if col in ['Agente', 'Dia', 'Hora']]
                 st.dataframe(df_detalle[columnas_mostrar], use_container_width=True, hide_index=True)
         else:
-            st.info(f"No hay leads en {fecha_detalle} a las {int(hora_detalle)}:00h")
+            # Mensaje según si se filtró por hora o "Todos"
+            if hora_detalle == "Todos":
+                st.info(f"No hay leads en {fecha_detalle}")
+            else:
+                st.info(f"No hay leads en {fecha_detalle} a las {int(hora_detalle)}:00h")
 
 else:
     st.info(f"No hay datos de Leads con cobertura para {mes}")
