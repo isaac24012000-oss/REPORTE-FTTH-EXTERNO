@@ -1540,7 +1540,7 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccion
     
     # Convertir FECHA a datetime y extraer solo la fecha (sin hora)
     df_cobertura['Fecha'] = pd.to_datetime(df_cobertura['Fecha'], errors='coerce')
-    df_cobertura['Dia'] = df_cobertura['Fecha'].dt.date
+    df_cobertura['Dia'] = df_cobertura['Fecha'].dt.strftime('%d/%m')
     
     # Convertir HORA a int y filtrar valores válidos (no NaN)
     df_cobertura['Hora'] = df_cobertura['HORA'].dropna().astype(int) if 'HORA' in df_cobertura.columns else None
