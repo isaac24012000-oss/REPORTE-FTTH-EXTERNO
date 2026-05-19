@@ -1572,6 +1572,67 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccion
     
     return tabla_pivot
 
+@st.cache_data(ttl=60)
+def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="Todos", hora_seleccionada=None, fecha_seleccionada=None):
+    """Obtiene el detalle de quiénes (asesores) se conectaron con cobertura en una hora y fecha específica
+    Retorna un DataFrame con los asesores que tuvieron leads en esa combinación"""
+    df_mantra = load_mantra_data()
+    
+    if df_mantra is None or df_mantra.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por mes
+    df_mes = df_mantra[df_mantra['Mes'] == mes_seleccionado].copy()
+    
+    if df_mes.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por asesor si está especificado
+    if asesor_seleccionado != "Todos":
+        df_mes['Agente'] = df_mes['Agente'].astype(str).str.strip()
+        df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
+        if df_mes.empty:
+            return pd.DataFrame()
+    
+    # Limpiar espacios en blanco
+    df_mes['NIVEL 2'] = df_mes['NIVEL 2'].astype(str).str.strip()
+    
+    # Filtrar solo los que tienen "Con Cobertura"
+    df_cobertura = df_mes[df_mes['NIVEL 2'] == 'Con Cobertura'].copy()
+    
+    if df_cobertura.empty:
+        return pd.DataFrame()
+    
+    # Convertir FECHA a datetime y extraer solo la fecha
+    df_cobertura['Fecha'] = pd.to_datetime(df_cobertura['Fecha'], errors='coerce')
+    df_cobertura['Dia'] = df_cobertura['Fecha'].dt.strftime('%d/%m')
+    
+    # Convertir HORA a int y filtrar valores válidos
+    df_cobertura = df_cobertura.dropna(subset=['HORA']).copy()
+    df_cobertura['Hora'] = df_cobertura['HORA'].astype(int)
+    
+    # Filtrar por hora si está especificada
+    if hora_seleccionada is not None:
+        df_cobertura = df_cobertura[df_cobertura['Hora'] == hora_seleccionada]
+    
+    # Filtrar por fecha si está especificada
+    if fecha_seleccionada is not None:
+        df_cobertura = df_cobertura[df_cobertura['Dia'] == fecha_seleccionada]
+    
+    if df_cobertura.empty:
+        return pd.DataFrame()
+    
+    # Limpiar columna Agente
+    df_cobertura['Agente'] = df_cobertura['Agente'].astype(str).str.strip()
+    
+    # Retornar solo columnas relevantes: Agente, Hora, Fecha, y otros detalles disponibles
+    columnas_disponibles = ['Agente', 'Hora', 'Dia']
+    for col in ['Cliente', 'Teléfono', 'Departamento']:
+        if col in df_cobertura.columns:
+            columnas_disponibles.append(col)
+    
+    return df_cobertura[columnas_disponibles]
+
 # ============= ANÁLISIS DETALLADO DEL DRIVE =============
 
 @st.cache_data(ttl=3600)
@@ -4762,6 +4823,43 @@ if not tabla_cobertura.empty:
         
         with col_franjas[idx]:
             st.metric(franja_nombre, int(subtotal))
+
+    # Sección de detalles: Quién se conectó en una hora-fecha específica
+    st.markdown("#### 👥 Detalle: Quién se conectó")
+    
+    col_hora, col_fecha = st.columns(2)
+    
+    with col_hora:
+        horas_disponibles = sorted([h for h in tabla_cobertura.index if isinstance(h, (int, float)) and h != 'TOTAL'])
+        hora_detalle = st.selectbox("Selecciona Hora", horas_disponibles, key="hora_detalle")
+    
+    with col_fecha:
+        fechas_disponibles = sorted([col for col in tabla_cobertura.columns if col != 'TOTAL'])
+        fecha_detalle = st.selectbox("Selecciona Fecha", fechas_disponibles, key="fecha_detalle")
+    
+    if hora_detalle is not None and fecha_detalle:
+        df_detalle = get_detalle_leads_cobertura(mes, asesor_filtro_cobertura, int(hora_detalle), str(fecha_detalle))
+        
+        if not df_detalle.empty:
+            st.markdown(f"**Leads con cobertura el {fecha_detalle} a las {int(hora_detalle)}:00h**")
+            
+            # Agrupar por Agente y contar
+            resumen_asesores = df_detalle.groupby('Agente').size().reset_index(name='Cantidad').sort_values('Cantidad', ascending=False)
+            
+            col_resumen, col_tabla = st.columns([1, 2])
+            
+            with col_resumen:
+                st.markdown("**Resumen por Asesor:**")
+                for idx, row in resumen_asesores.iterrows():
+                    st.write(f"• {row['Agente']}: **{int(row['Cantidad'])}** leads")
+            
+            with col_tabla:
+                st.markdown("**Detalle Completo:**")
+                # Mostrar tabla con columnas limitadas
+                columnas_mostrar = [col for col in df_detalle.columns if col in ['Agente', 'Dia', 'Hora']]
+                st.dataframe(df_detalle[columnas_mostrar], use_container_width=True, hide_index=True)
+        else:
+            st.info(f"No hay leads en {fecha_detalle} a las {int(hora_detalle)}:00h")
 
 else:
     st.info(f"No hay datos de Leads con cobertura para {mes}")
