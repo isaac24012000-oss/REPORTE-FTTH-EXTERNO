@@ -1507,9 +1507,10 @@ def load_data_codigo_carga(mes_seleccionado=None):
 # ============= ANÁLISIS DE LEADS CON COBERTURA POR HORA Y FECHA =============
 
 @st.cache_data(ttl=3600)
-def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
+def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccionado="Todos"):
     """Obtiene tabla de Leads con Cobertura (NIVEL 2) por Hora y Fecha desde MANTRA
-    Retorna un DataFrame pivote con horas en filas y fechas en columnas"""
+    Retorna un DataFrame pivote con horas en filas y fechas en columnas
+    Si asesor_seleccionado != "Todos", filtra por ese agente específico"""
     df_mantra = load_mantra_data()
     
     if df_mantra is None or df_mantra.empty:
@@ -1520,6 +1521,13 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo"):
     
     if df_mes.empty:
         return pd.DataFrame()
+    
+    # Filtrar por asesor si está especificado
+    if asesor_seleccionado != "Todos":
+        df_mes['Agente'] = df_mes['Agente'].astype(str).str.strip()
+        df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
+        if df_mes.empty:
+            return pd.DataFrame()
     
     # Limpiar espacios en blanco
     df_mes['NIVEL 2'] = df_mes['NIVEL 2'].astype(str).str.strip()
@@ -4530,8 +4538,25 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 st.markdown("### 📅 Análisis de Leads con Cobertura por Hora y Fecha")
 st.markdown("*Tabla que muestra la cantidad de Leads con cobertura (MANTRA) agrupados por hora del día y fecha*")
 
+# Filtro de asesor para esta sección
+col_filtro_asesor_1, col_filtro_asesor_2 = st.columns([3, 1])
+with col_filtro_asesor_1:
+    df_mantra_temp = load_mantra_data()
+    if df_mantra_temp is not None and not df_mantra_temp.empty:
+        df_mantra_temp = df_mantra_temp[df_mantra_temp['Mes'] == mes].copy()
+        if not df_mantra_temp.empty:
+            df_mantra_temp['Agente'] = df_mantra_temp['Agente'].astype(str).str.strip()
+            opciones_asesores_cobertura = ["Todos"] + sorted(df_mantra_temp['Agente'].unique().tolist())
+            asesor_filtro_cobertura = st.selectbox("👤 Filtrar por Asesor (Leads con Cobertura)", opciones_asesores_cobertura, key="asesor_cobertura")
+        else:
+            opciones_asesores_cobertura = ["Todos"]
+            asesor_filtro_cobertura = "Todos"
+    else:
+        opciones_asesores_cobertura = ["Todos"]
+        asesor_filtro_cobertura = "Todos"
+
 # Obtener datos
-tabla_cobertura = get_leads_cobertura_por_hora_fecha(mes)
+tabla_cobertura = get_leads_cobertura_por_hora_fecha(mes, asesor_filtro_cobertura)
 
 if not tabla_cobertura.empty:
     # Mostrar información resumida
