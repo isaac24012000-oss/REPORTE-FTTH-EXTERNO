@@ -1510,7 +1510,8 @@ def load_data_codigo_carga(mes_seleccionado=None):
 def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccionado="Todos"):
     """Obtiene tabla de Leads con Cobertura (NIVEL 2) por Hora y Fecha desde MANTRA
     Retorna un DataFrame pivote con horas en filas y fechas en columnas
-    Si asesor_seleccionado != "Todos", filtra por ese agente específico"""
+    Si asesor_seleccionado != "Todos", filtra por ese agente/agentes específico(s)
+    asesor_seleccionado puede ser string "Todos" o una lista de asesores"""
     df_mantra = load_mantra_data()
     
     if df_mantra is None or df_mantra.empty:
@@ -1525,7 +1526,11 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccion
     # Filtrar por asesor si está especificado
     if asesor_seleccionado != "Todos":
         df_mes['Agente'] = df_mes['Agente'].astype(str).str.strip()
-        df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
+        # Manejar tanto string como lista de asesores
+        if isinstance(asesor_seleccionado, list):
+            df_mes = df_mes[df_mes['Agente'].isin(asesor_seleccionado)]
+        else:
+            df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
         if df_mes.empty:
             return pd.DataFrame()
     
@@ -1573,10 +1578,11 @@ def get_leads_cobertura_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccion
     return tabla_pivot
 
 @st.cache_data(ttl=60)
-def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="Todos", hora_seleccionada="Todos", fecha_seleccionada=None):
-    """Obtiene el detalle de quiénes (asesores) se conectaron con cobertura en una hora y fecha específica
-    Retorna un DataFrame con los asesores que tuvieron leads en esa combinación
-    Si hora_seleccionada es "Todos", no filtra por hora"""
+def get_leads_contrato_ok_por_hora_fecha(mes_seleccionado="Mayo", asesor_seleccionado="Todos"):
+    """Obtiene tabla de Leads con Contrato OK (NIVEL 3) por Hora y Fecha desde MANTRA
+    Retorna un DataFrame pivote con horas en filas y fechas en columnas
+    Solo cuenta los que tienen NIVEL 2 = 'Con Cobertura' Y NIVEL 3 = 'Contrato OK'
+    asesor_seleccionado puede ser string "Todos" o una lista de asesores"""
     df_mantra = load_mantra_data()
     
     if df_mantra is None or df_mantra.empty:
@@ -1591,7 +1597,83 @@ def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="To
     # Filtrar por asesor si está especificado
     if asesor_seleccionado != "Todos":
         df_mes['Agente'] = df_mes['Agente'].astype(str).str.strip()
-        df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
+        # Manejar tanto string como lista de asesores
+        if isinstance(asesor_seleccionado, list):
+            df_mes = df_mes[df_mes['Agente'].isin(asesor_seleccionado)]
+        else:
+            df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
+        if df_mes.empty:
+            return pd.DataFrame()
+    
+    # Limpiar espacios en blanco
+    df_mes['NIVEL 2'] = df_mes['NIVEL 2'].astype(str).str.strip()
+    df_mes['NIVEL 3'] = df_mes['NIVEL 3'].astype(str).str.strip()
+    
+    # Filtrar solo los que tienen "Con Cobertura" Y "Contrato OK"
+    df_contrato_ok = df_mes[
+        (df_mes['NIVEL 2'] == 'Con Cobertura') & 
+        (df_mes['NIVEL 3'] == 'Contrato OK')
+    ].copy()
+    
+    if df_contrato_ok.empty:
+        return pd.DataFrame()
+    
+    # Convertir FECHA a datetime y extraer solo la fecha (sin hora)
+    df_contrato_ok['Fecha'] = pd.to_datetime(df_contrato_ok['Fecha'], errors='coerce')
+    df_contrato_ok['Dia'] = df_contrato_ok['Fecha'].dt.strftime('%d/%m')
+    
+    # Convertir HORA a int y filtrar valores válidos (no NaN)
+    df_contrato_ok = df_contrato_ok.dropna(subset=['HORA']).copy()
+    df_contrato_ok['Hora'] = df_contrato_ok['HORA'].astype(int)
+    
+    if df_contrato_ok.empty:
+        return pd.DataFrame()
+    
+    # Agrupar por hora y día
+    df_pivot = df_contrato_ok.groupby(['Hora', 'Dia']).size().reset_index(name='Cantidad')
+    
+    # Crear tabla pivote (horas en filas, fechas en columnas)
+    tabla_pivot = df_pivot.pivot(index='Hora', columns='Dia', values='Cantidad').fillna(0).astype(int)
+    
+    # Agregar fila de totales por fecha
+    totales_por_fecha = tabla_pivot.sum()
+    tabla_pivot.loc['TOTAL'] = totales_por_fecha
+    
+    # Agregar columna de totales por hora
+    tabla_pivot['TOTAL'] = tabla_pivot.sum(axis=1)
+    
+    # Ordenar índice (horas de menor a mayor)
+    horas_validas = sorted([h for h in tabla_pivot.index if isinstance(h, (int, float)) and h != 'TOTAL'])
+    horas_orden = horas_validas + ['TOTAL']
+    tabla_pivot = tabla_pivot.reindex(horas_orden, fill_value=0)
+    
+    return tabla_pivot
+
+@st.cache_data(ttl=60)
+def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="Todos", hora_seleccionada="Todos", fecha_seleccionada=None):
+    """Obtiene el detalle de quiénes (asesores) se conectaron con cobertura en una hora y fecha específica
+    Retorna un DataFrame con los asesores que tuvieron leads en esa combinación
+    Si hora_seleccionada es "Todos", no filtra por hora
+    asesor_seleccionado puede ser string "Todos" o una lista de asesores"""
+    df_mantra = load_mantra_data()
+    
+    if df_mantra is None or df_mantra.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por mes
+    df_mes = df_mantra[df_mantra['Mes'] == mes_seleccionado].copy()
+    
+    if df_mes.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por asesor si está especificado
+    if asesor_seleccionado != "Todos":
+        df_mes['Agente'] = df_mes['Agente'].astype(str).str.strip()
+        # Manejar tanto string como lista de asesores
+        if isinstance(asesor_seleccionado, list):
+            df_mes = df_mes[df_mes['Agente'].isin(asesor_seleccionado)]
+        else:
+            df_mes = df_mes[df_mes['Agente'] == asesor_seleccionado]
         if df_mes.empty:
             return pd.DataFrame()
     
@@ -4608,108 +4690,52 @@ with col_filtro_asesor_1:
         df_mantra_temp = df_mantra_temp[df_mantra_temp['Mes'] == mes].copy()
         if not df_mantra_temp.empty:
             df_mantra_temp['Agente'] = df_mantra_temp['Agente'].astype(str).str.strip()
-            opciones_asesores_cobertura = ["Todos"] + sorted(df_mantra_temp['Agente'].unique().tolist())
-            asesor_filtro_cobertura = st.selectbox("👤 Filtrar por Asesor (Leads con Cobertura)", opciones_asesores_cobertura, key="asesor_cobertura")
+            opciones_asesores_cobertura = sorted(df_mantra_temp['Agente'].unique().tolist())
+            asesor_filtro_cobertura = st.multiselect("👤 Filtrar por Asesor", opciones_asesores_cobertura, default=opciones_asesores_cobertura, key="asesor_cobertura")
+            # Si no hay selección, considerar "Todos"
+            if not asesor_filtro_cobertura:
+                asesor_filtro_cobertura = "Todos"
         else:
-            opciones_asesores_cobertura = ["Todos"]
             asesor_filtro_cobertura = "Todos"
     else:
-        opciones_asesores_cobertura = ["Todos"]
         asesor_filtro_cobertura = "Todos"
 
-# Obtener datos
-tabla_cobertura = get_leads_cobertura_por_hora_fecha(mes, asesor_filtro_cobertura)
+# CREAR TABS
+tab_cobertura, tab_contrato_ok = st.tabs(["📊 Leads con Cobertura", "✅ Contrato OK"])
 
-if not tabla_cobertura.empty:
-    # Mostrar información resumida
-    col1, col2, col3 = st.columns(3)
+# ============= TAB 1: LEADS CON COBERTURA =============
+with tab_cobertura:
+    # Obtener datos
+    tabla_cobertura = get_leads_cobertura_por_hora_fecha(mes, asesor_filtro_cobertura)
     
-    with col1:
-        total_leads_cobertura = tabla_cobertura.loc['TOTAL', 'TOTAL'] if 'TOTAL' in tabla_cobertura.index else 0
-        st.metric("📊 Total Leads con Cobertura", int(total_leads_cobertura))
-    
-    with col2:
-        # Encontrar la hora con más leads
-        if 'TOTAL' in tabla_cobertura.index:
-            tabla_sin_total = tabla_cobertura.drop('TOTAL')
-            if not tabla_sin_total.empty:
-                hora_max = tabla_sin_total['TOTAL'].idxmax() if len(tabla_sin_total) > 0 else "N/A"
-                max_leads_hora = tabla_sin_total['TOTAL'].max() if len(tabla_sin_total) > 0 else 0
-                st.metric(f"⏰ Hora Pico", f"{int(hora_max)}:00 hrs", delta=f"{int(max_leads_hora)} leads")
-        else:
-            st.metric("⏰ Hora Pico", "N/A")
-    
-    with col3:
-        # Promedio de leads por hora
-        if 'TOTAL' in tabla_cobertura.index:
-            tabla_sin_total = tabla_cobertura.drop('TOTAL')
-            if len(tabla_sin_total) > 0:
-                promedio = tabla_sin_total['TOTAL'].mean()
-                st.metric("📈 Promedio por Hora", f"{promedio:.0f} leads")
-        else:
-            st.metric("📈 Promedio por Hora", "N/A")
-    
-    # Mostrar gráfico de línea por hora
-    st.markdown("#### 📊 Detalle por Hora y Fecha - Gráfico de Tendencia")
-    
-    tabla_horas_plot = tabla_cobertura.drop('TOTAL', errors='ignore').copy()
-    
-    if not tabla_horas_plot.empty and 'TOTAL' in tabla_cobertura.columns:
-        # Preparar datos para el gráfico
-        datos_plot = tabla_cobertura.drop('TOTAL', errors='ignore').copy()
-        datos_plot['TOTAL'] = tabla_cobertura['TOTAL']
+    if not tabla_cobertura.empty:
+        # Mostrar información resumida
+        col1, col2, col3 = st.columns(3)
         
-        # Crear gráfico
-        fig_horas = go.Figure()
+        with col1:
+            total_leads_cobertura = tabla_cobertura.loc['TOTAL', 'TOTAL'] if 'TOTAL' in tabla_cobertura.index else 0
+            st.metric("📊 Total Leads con Cobertura", int(total_leads_cobertura))
         
-        fig_horas.add_trace(go.Scatter(
-            x=datos_plot.index,
-            y=datos_plot['TOTAL'],
-            mode='lines+markers',
-            name='Leads por Hora',
-            line=dict(color='#3b82f6', width=3),
-            marker=dict(size=8),
-            hovertemplate='<b>%{x}:00 hrs</b><br>Leads: %{y}<extra></extra>'
-        ))
+        with col2:
+            # Encontrar la hora con más leads
+            if 'TOTAL' in tabla_cobertura.index:
+                tabla_sin_total = tabla_cobertura.drop('TOTAL')
+                if not tabla_sin_total.empty:
+                    hora_max = tabla_sin_total['TOTAL'].idxmax() if len(tabla_sin_total) > 0 else "N/A"
+                    max_leads_hora = tabla_sin_total['TOTAL'].max() if len(tabla_sin_total) > 0 else 0
+                    st.metric(f"⏰ Hora Pico", f"{int(hora_max)}:00 hrs", delta=f"{int(max_leads_hora)} leads")
+            else:
+                st.metric("⏰ Hora Pico", "N/A")
         
-        # Destacar franjas horarias pico (10-12 y 14-16)
-        horas_pico = [10, 11, 12, 14, 15, 16]
-        for hora_pico in horas_pico:
-            if hora_pico in datos_plot.index:
-                fig_horas.add_vline(
-                    x=hora_pico,
-                    line_dash="dash",
-                    line_color="rgba(239, 68, 68, 0.3)",
-                    annotation_text=f"Pico {hora_pico}:00",
-                    annotation_position="top"
-                )
-        
-        fig_horas.update_layout(
-            title="Leads por Hora - Identificando Horarios Pico",
-            xaxis_title="Hora del Día",
-            yaxis_title="Cantidad de Leads",
-            height=400,
-            hovermode='x unified',
-            xaxis=dict(
-                gridcolor='rgba(0,0,0,0.05)',
-                showgrid=True,
-                zeroline=False,
-                tickmode='linear',
-                tick0=0,
-                dtick=1
-            ),
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.05)',
-                showgrid=True,
-                zeroline=False
-            ),
-            plot_bgcolor='rgba(248, 250, 252, 0.5)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(size=11, family='Arial', color='#1e293b'),
-            margin=dict(l=50, r=50, t=80, b=50)
-        )
-        
-        st.plotly_chart(fig_horas, use_container_width=True, config={'displayModeBar': False})
+        with col3:
+            # Promedio de leads por hora
+            if 'TOTAL' in tabla_cobertura.index:
+                tabla_sin_total = tabla_cobertura.drop('TOTAL')
+                if len(tabla_sin_total) > 0:
+                    promedio = tabla_sin_total['TOTAL'].mean()
+                    st.metric("📈 Promedio por Hora", f"{promedio:.0f} leads")
+            else:
+                st.metric("📈 Promedio por Hora", "N/A")
     
     # Tabla detallada con estilos destacando horas pico
     st.markdown("#### 📋 Detalle Completo por Hora y Fecha")
@@ -4876,8 +4902,128 @@ if not tabla_cobertura.empty:
             else:
                 st.info(f"No hay leads en {fecha_detalle} a las {int(hora_detalle)}:00h")
 
-else:
-    st.info(f"No hay datos de Leads con cobertura para {mes}")
+    else:
+        st.info(f"No hay datos de Leads con cobertura para {mes}")
+
+# ============= TAB 2: CONTRATO OK =============
+with tab_contrato_ok:
+    # Obtener datos de Contrato OK
+    tabla_contrato_ok = get_leads_contrato_ok_por_hora_fecha(mes, asesor_filtro_cobertura)
+    
+    if not tabla_contrato_ok.empty:
+        # Mostrar información resumida
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_contrato_ok = tabla_contrato_ok.loc['TOTAL', 'TOTAL'] if 'TOTAL' in tabla_contrato_ok.index else 0
+            st.metric("✅ Total Contrato OK", int(total_contrato_ok))
+        
+        with col2:
+            # Encontrar la hora con más leads
+            if 'TOTAL' in tabla_contrato_ok.index:
+                tabla_sin_total = tabla_contrato_ok.drop('TOTAL')
+                if not tabla_sin_total.empty:
+                    hora_max = tabla_sin_total['TOTAL'].idxmax() if len(tabla_sin_total) > 0 else "N/A"
+                    max_leads_hora = tabla_sin_total['TOTAL'].max() if len(tabla_sin_total) > 0 else 0
+                    st.metric(f"⏰ Hora Pico", f"{int(hora_max)}:00 hrs", delta=f"{int(max_leads_hora)} leads")
+            else:
+                st.metric("⏰ Hora Pico", "N/A")
+        
+        with col3:
+            # Promedio de leads por hora
+            if 'TOTAL' in tabla_contrato_ok.index:
+                tabla_sin_total = tabla_contrato_ok.drop('TOTAL')
+                if len(tabla_sin_total) > 0:
+                    promedio = tabla_sin_total['TOTAL'].mean()
+                    st.metric("📈 Promedio por Hora", f"{promedio:.0f} leads")
+            else:
+                st.metric("📈 Promedio por Hora", "N/A")
+        
+        # Tabla detallada con estilos
+        st.markdown("#### 📋 Detalle Completo por Hora y Fecha - Contrato OK")
+        
+        # Convertir a columnas de formato legible
+        tabla_display = tabla_contrato_ok.copy()
+        tabla_display.index.name = 'Hora'
+        tabla_display = tabla_display.reset_index()
+        
+        # Renombrar columnas de fecha
+        tabla_display.columns = ['Hora'] + [str(col).split()[0] if col != 'TOTAL' else 'TOTAL' for col in tabla_display.columns[1:]]
+        
+        # Crear tabla HTML
+        html_table_contrato = '<table style="width:100%; border-collapse: collapse; margin: 5px auto; font-size: 11px;">'
+        
+        # Encabezado
+        html_table_contrato += '<tr style="background-color: #d1fae5; border-bottom: 2px solid #ddd;">'
+        for col in tabla_display.columns:
+            html_table_contrato += f'<th style="padding: 4px; text-align: center; border-right: 1px solid #ddd; font-size: 10px;">{col}</th>'
+        html_table_contrato += '</tr>'
+        
+        # Filas de datos
+        for idx, row in tabla_display.iterrows():
+            # Saltar la fila de TOTAL
+            if str(row['Hora']).upper() == 'TOTAL':
+                continue
+                
+            try:
+                hora = int(row['Hora'])
+            except (ValueError, TypeError):
+                continue
+            
+            html_table_contrato += f'<tr style="background-color: #ffffff; border-bottom: 1px solid #eee;">'
+            
+            for col_idx, col in enumerate(tabla_display.columns):
+                valor = row[col]
+                is_total = col == 'TOTAL'
+                font_weight = 'bold' if is_total else 'normal'
+                color = '#059669' if is_total else '#1e293b'
+                
+                html_table_contrato += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;">{valor}</td>'
+            
+            html_table_contrato += '</tr>'
+        
+        # Agregar fila de TOTAL al final
+        total_row = tabla_display[tabla_display['Hora'] == 'TOTAL']
+        if not total_row.empty:
+            html_table_contrato += '<tr style="background-color: #d1fae5; border-top: 2px solid #ddd; font-weight: bold;">'
+            for col in tabla_display.columns:
+                valor = total_row[col].values[0] if col in total_row.columns else 0
+                html_table_contrato += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #ddd; font-weight: bold; font-size: 11px;">{valor}</td>'
+            html_table_contrato += '</tr>'
+        
+        html_table_contrato += '</table>'
+        
+        st.markdown(html_table_contrato, unsafe_allow_html=True)
+        
+        # Análisis de distribución
+        st.markdown("#### 📊 Análisis de Distribución")
+        
+        tabla_horas_ok = tabla_contrato_ok.drop('TOTAL', errors='ignore')
+        
+        # Franjas horarias
+        st.markdown("**Desglose por Franja Horaria:**")
+        
+        franjas = {
+            'Madrugada (0-6h)': [h for h in range(0, 7)],
+            'Mañana (7-12h)': [h for h in range(7, 13)],
+            'Tarde (13-18h)': [h for h in range(13, 19)],
+            'Noche (19-23h)': [h for h in range(19, 24)]
+        }
+        
+        col_franjas = st.columns(4)
+        
+        for idx, (franja_nombre, horas) in enumerate(franjas.items()):
+            horas_validas = [h for h in horas if h in tabla_horas_ok.index]
+            if horas_validas:
+                subtotal = tabla_horas_ok.loc[horas_validas, 'TOTAL'].sum() if 'TOTAL' in tabla_horas_ok.columns else tabla_horas_ok.loc[horas_validas].sum(axis=1).sum()
+            else:
+                subtotal = 0
+            
+            with col_franjas[idx]:
+                st.metric(franja_nombre, int(subtotal))
+    
+    else:
+        st.info(f"No hay datos de Contrato OK para {mes}")
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
