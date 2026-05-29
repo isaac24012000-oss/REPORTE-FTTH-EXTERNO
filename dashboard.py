@@ -3876,8 +3876,34 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 # ============= NUEVA SECCIÓN: ANÁLISIS DE CASOS POR NIVEL =============
 st.markdown("### 📋 Análisis de Casos por Nivel (MANTRA)")
 
+# Obtener lista de meses disponibles
+df_mantra_completo = load_mantra_data()
+meses_disponibles = ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo"]
+if df_mantra_completo is not None and not df_mantra_completo.empty:
+    meses_en_datos = sorted(df_mantra_completo['Mes'].unique())
+    meses_disponibles = [m for m in meses_disponibles if m in meses_en_datos]
+
+# Selector de mes para esta sección
+col_mes_analisis, col_espacio_mes = st.columns([2, 3], gap="small")
+with col_mes_analisis:
+    mes_analisis = st.selectbox(
+        "📅 Selecciona Mes para Análisis",
+        ["Todos"] + meses_disponibles,
+        index=len(meses_disponibles) if len(meses_disponibles) > 0 else 0,
+        key="mes_analisis_casos"
+    )
+
 # Obtener datos detallados de MANTRA
-df_mantra_mes = get_datos_mantra_mes(mes)
+if mes_analisis == "Todos":
+    # Cargar todos los meses
+    df_mantra_mes = load_mantra_data()
+    if df_mantra_mes is not None and not df_mantra_mes.empty:
+        # Limpiar espacios en blanco en columnas importantes
+        for col in ['Agente', 'NIVEL 1', 'NIVEL 2', 'NIVEL 3']:
+            if col in df_mantra_mes.columns:
+                df_mantra_mes[col] = df_mantra_mes[col].astype(str).str.strip()
+else:
+    df_mantra_mes = get_datos_mantra_mes(mes_analisis)
 
 if not df_mantra_mes.empty:
     # Crear filtros múltiples en 4 columnas
