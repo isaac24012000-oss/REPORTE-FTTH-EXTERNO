@@ -3914,7 +3914,7 @@ if not df_mantra_mes.empty:
         agente_filtro = st.selectbox(
             "Agente",
             ["Todos"] + list(agentes_unique),
-            key="agente_filtro_casos"
+            key=f"agente_filtro_casos_{mes_analisis}"
         )
     
     # Filtrar por agente para obtener valores únicos de niveles
@@ -3933,7 +3933,7 @@ if not df_mantra_mes.empty:
         nivel1_filtro = st.selectbox(
             "Nivel 1",
             ["Todos"] + list(nivel1_unique),
-            key="nivel1_filtro_casos"
+            key=f"nivel1_filtro_casos_{mes_analisis}"
         )
     
     # Filtrar por nivel 1
@@ -3955,7 +3955,7 @@ if not df_mantra_mes.empty:
         nivel2_filtro = st.selectbox(
             "Nivel 2",
             ["Todos"] + list(nivel2_unique),
-            key="nivel2_filtro_casos"
+            key=f"nivel2_filtro_casos_{mes_analisis}"
         )
     
     # Filtrar por nivel 2
@@ -3978,7 +3978,7 @@ if not df_mantra_mes.empty:
             "Nivel 3",
             list(nivel3_unique),
             default=list(nivel3_unique),
-            key="nivel3_filtro_casos"
+            key=f"nivel3_filtro_casos_{mes_analisis}"
         )
     
     # Segunda fila de filtros - Fechas
@@ -4031,7 +4031,7 @@ if not df_mantra_mes.empty:
                             value=valor_inicio.date() if hasattr(valor_inicio, 'date') else valor_inicio,
                             min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
                             max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
-                            key="fecha_inicio_casos"
+                            key=f"fecha_inicio_casos_{mes_analisis}"
                         )
                     
                     with col_fecha2:
@@ -4040,7 +4040,7 @@ if not df_mantra_mes.empty:
                             value=valor_fin.date() if hasattr(valor_fin, 'date') else valor_fin,
                             min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
                             max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
-                            key="fecha_fin_casos"
+                            key=f"fecha_fin_casos_{mes_analisis}"
                         )
     except Exception as e:
         st.warning(f"No se pudo cargar el selector de fechas: {str(e)}")
