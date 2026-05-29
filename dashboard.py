@@ -3981,71 +3981,54 @@ if not df_mantra_mes.empty:
             key=f"nivel3_filtro_casos_{mes_analisis}"
         )
     
-    # Segunda fila de filtros - Fechas
+    # Segunda fila de filtros - Fechas (Solo si seleccionó "Todos")
     col_fecha1, col_fecha2 = st.columns(2, gap="small")
     
-    # Preparar datos de fecha - obtener rango de TODOS los datos, no solo del mes seleccionado
+    # Preparar datos de fecha - solo para modo "Todos"
     fecha_inicio = None
     fecha_fin = None
     
-    try:
-        df_mantra_completo = load_mantra_data()
-        if df_mantra_completo is not None and not df_mantra_completo.empty:
-            # Detectar columna de fecha
-            col_fecha = 'FECHA' if 'FECHA' in df_mantra_completo.columns else 'Fecha'
-            
-            if col_fecha in df_mantra_completo.columns:
-                df_temp_fecha = df_mantra_completo.copy()
-                df_temp_fecha[col_fecha] = pd.to_datetime(df_temp_fecha[col_fecha], errors='coerce')
+    if mes_analisis == "Todos":
+        # Solo permitir filtro de fechas cuando se selecciona "Todos"
+        try:
+            df_mantra_completo = load_mantra_data()
+            if df_mantra_completo is not None and not df_mantra_completo.empty:
+                # Detectar columna de fecha
+                col_fecha = 'FECHA' if 'FECHA' in df_mantra_completo.columns else 'Fecha'
                 
-                # Obtener rango de fechas disponibles de TODOS los datos
-                fecha_min_global = df_temp_fecha[col_fecha].min()
-                fecha_max_global = df_temp_fecha[col_fecha].max()
-                
-                # Validar que las fechas globales sean válidas
-                if pd.isna(fecha_min_global) or pd.isna(fecha_max_global):
-                    fecha_inicio = None
-                    fecha_fin = None
-                else:
-                    # Obtener rango de fechas del mes seleccionado para los valores por defecto
-                    if not df_mantra_mes.empty:
-                        fecha_filtrada = df_mantra_mes.copy()
-                        fecha_filtrada[col_fecha] = pd.to_datetime(fecha_filtrada[col_fecha], errors='coerce')
-                        fecha_min_mes = fecha_filtrada[col_fecha].min()
-                        fecha_max_mes = fecha_filtrada[col_fecha].max()
+                if col_fecha in df_mantra_completo.columns:
+                    df_temp_fecha = df_mantra_completo.copy()
+                    df_temp_fecha[col_fecha] = pd.to_datetime(df_temp_fecha[col_fecha], errors='coerce')
+                    
+                    # Obtener rango de fechas disponibles
+                    fecha_min_global = df_temp_fecha[col_fecha].min()
+                    fecha_max_global = df_temp_fecha[col_fecha].max()
+                    
+                    # Validar que las fechas sean válidas
+                    if pd.notna(fecha_min_global) and pd.notna(fecha_max_global):
+                        with col_fecha1:
+                            fecha_inicio = st.date_input(
+                                "Fecha Inicio",
+                                value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
+                                min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
+                                max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
+                                key=f"fecha_inicio_casos_todos"
+                            )
                         
-                        # Usar valores del mes si existen, sino usar valores globales
-                        valor_inicio = fecha_min_mes if pd.notna(fecha_min_mes) else fecha_min_global
-                        valor_fin = fecha_max_mes if pd.notna(fecha_max_mes) else fecha_max_global
-                    else:
-                        valor_inicio = fecha_min_global
-                        valor_fin = fecha_max_global
-                    
-                    # Asegurar que los valores estén dentro del rango
-                    valor_inicio = max(valor_inicio, fecha_min_global)
-                    valor_fin = min(valor_fin, fecha_max_global)
-                    
-                    with col_fecha1:
-                        fecha_inicio = st.date_input(
-                            "Fecha Inicio",
-                            value=valor_inicio.date() if hasattr(valor_inicio, 'date') else valor_inicio,
-                            min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
-                            max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
-                            key=f"fecha_inicio_casos_{mes_analisis}"
-                        )
-                    
-                    with col_fecha2:
-                        fecha_fin = st.date_input(
-                            "Fecha Fin",
-                            value=valor_fin.date() if hasattr(valor_fin, 'date') else valor_fin,
-                            min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
-                            max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
-                            key=f"fecha_fin_casos_{mes_analisis}"
-                        )
-    except Exception as e:
-        st.warning(f"No se pudo cargar el selector de fechas: {str(e)}")
-        fecha_inicio = None
-        fecha_fin = None
+                        with col_fecha2:
+                            fecha_fin = st.date_input(
+                                "Fecha Fin",
+                                value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
+                                min_value=fecha_min_global.date() if hasattr(fecha_min_global, 'date') else fecha_min_global,
+                                max_value=fecha_max_global.date() if hasattr(fecha_max_global, 'date') else fecha_max_global,
+                                key=f"fecha_fin_casos_todos"
+                            )
+        except Exception as e:
+            st.warning(f"No se pudo cargar el selector de fechas: {str(e)}")
+            fecha_inicio = None
+            fecha_fin = None
+    else:
+        st.info(f"📅 Mostrando todos los leads de **{mes_analisis}** (sin filtro de fechas)")
     
     # Aplicar todos los filtros
     df_filtrado = df_mantra_mes.copy()
