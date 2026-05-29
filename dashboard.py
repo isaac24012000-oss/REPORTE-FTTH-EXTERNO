@@ -3958,32 +3958,39 @@ if not df_mantra_mes.empty:
     # Segunda fila de filtros - Fechas
     col_fecha1, col_fecha2 = st.columns(2, gap="small")
     
-    # Preparar datos de fecha
-    fecha_filtrada = df_mantra_mes.copy()
-    if 'FECHA' in fecha_filtrada.columns or 'Fecha' in fecha_filtrada.columns:
+    # Preparar datos de fecha - obtener rango de TODOS los datos, no solo del mes seleccionado
+    df_mantra_completo = load_mantra_data()
+    if 'FECHA' in df_mantra_completo.columns or 'Fecha' in df_mantra_completo.columns:
         # Detectar columna de fecha
-        col_fecha = 'FECHA' if 'FECHA' in fecha_filtrada.columns else 'Fecha'
-        fecha_filtrada[col_fecha] = pd.to_datetime(fecha_filtrada[col_fecha], errors='coerce')
+        col_fecha = 'FECHA' if 'FECHA' in df_mantra_completo.columns else 'Fecha'
+        df_temp_fecha = df_mantra_completo.copy()
+        df_temp_fecha[col_fecha] = pd.to_datetime(df_temp_fecha[col_fecha], errors='coerce')
         
-        # Obtener rango de fechas disponibles
-        fecha_min = fecha_filtrada[col_fecha].min()
-        fecha_max = fecha_filtrada[col_fecha].max()
+        # Obtener rango de fechas disponibles de TODOS los datos
+        fecha_min_global = df_temp_fecha[col_fecha].min()
+        fecha_max_global = df_temp_fecha[col_fecha].max()
+        
+        # Obtener rango de fechas del mes seleccionado para los valores por defecto
+        fecha_filtrada = df_mantra_mes.copy()
+        fecha_filtrada[col_fecha] = pd.to_datetime(fecha_filtrada[col_fecha], errors='coerce')
+        fecha_min_mes = fecha_filtrada[col_fecha].min()
+        fecha_max_mes = fecha_filtrada[col_fecha].max()
         
         with col_fecha1:
             fecha_inicio = st.date_input(
                 "Fecha Inicio",
-                value=fecha_min,
-                min_value=fecha_min,
-                max_value=fecha_max,
+                value=fecha_min_mes if pd.notna(fecha_min_mes) else fecha_min_global,
+                min_value=fecha_min_global,
+                max_value=fecha_max_global,
                 key="fecha_inicio_casos"
             )
         
         with col_fecha2:
             fecha_fin = st.date_input(
                 "Fecha Fin",
-                value=fecha_max,
-                min_value=fecha_min,
-                max_value=fecha_max,
+                value=fecha_max_mes if pd.notna(fecha_max_mes) else fecha_max_global,
+                min_value=fecha_min_global,
+                max_value=fecha_max_global,
                 key="fecha_fin_casos"
             )
     else:
