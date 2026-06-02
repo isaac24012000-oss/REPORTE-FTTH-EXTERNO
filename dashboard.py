@@ -58,6 +58,42 @@ def get_total_leads_and_conversion(mes_seleccionado="Noviembre"):
     
     return total_leads, total_conversion
 
+@st.cache_data(ttl=60)
+def get_mes_anterior(mes_actual):
+    """Retorna el mes anterior al mes seleccionado"""
+    meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    try:
+        idx = meses_orden.index(mes_actual)
+        if idx == 0:
+            return 'Diciembre'  # Si es Enero, retorna Diciembre
+        return meses_orden[idx - 1]
+    except:
+        return None
+
+@st.cache_data(ttl=60)
+def get_variacion_meses(mes_actual, mes_anterior):
+    """Obtiene la variación de ventas entre dos meses
+    Retorna: (ventas_mes_actual, ventas_mes_anterior, variacion_pct)"""
+    df_drive = load_drive_data()
+    
+    if df_drive is None or df_drive.empty:
+        return 0, 0, 0
+    
+    # Obtener ventas del mes actual (primeros 31 días o lo que haya)
+    ventas_actual = get_ventas_del_mes_por_fecha(mes_actual)
+    
+    # Obtener ventas del mes anterior (primeros 31 días)
+    ventas_anterior = get_ventas_del_mes_por_fecha(mes_anterior)
+    
+    # Calcular variación
+    if ventas_anterior > 0:
+        variacion = ((ventas_actual - ventas_anterior) / ventas_anterior * 100)
+    else:
+        variacion = 0
+    
+    return ventas_actual, ventas_anterior, variacion
+
 @st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
     """Calcula la conversión: Ventas Del Mes (DRIVE) / Con Cobertura (MANTRA)
@@ -722,8 +758,10 @@ def get_comparativo_acumulativo_multiples_meses():
     return df_acumulativo
 
 @st.cache_data(ttl=3600)
-def get_comparativo_diario_multiples_meses():
-    """Obtiene un comparativo de VENTAS por DÍA para todos los meses disponibles (últimos 6 meses).
+def get_comparativo_diario_multiples_meses(mes_actual=None):
+    """Obtiene un comparativo de VENTAS por DÍA para todos los meses disponibles.
+    Si mes_actual se proporciona, muestra ese mes como el más reciente con los anteriores.
+    Si no, muestra los últimos 6 meses disponibles.
     VENTAS = todos los registros del mes (sin importar PAGO o ESTADO)
     Retorna un DataFrame con día como índice y cada mes como columna
     Filtra por fecha actual para no mostrar registros futuros"""
@@ -755,8 +793,17 @@ def get_comparativo_diario_multiples_meses():
     df_temp['FECHA_SORT'] = df_temp['FECHA_AÑO'] * 100 + df_temp['FECHA_MES_NUM']
     meses_disponibles = df_temp.sort_values('FECHA_SORT')['MES_NOMBRE'].unique()
     
-    # Tomar últimos 6 meses
-    meses_a_mostrar = list(meses_disponibles[-6:])
+    # Si se proporciona mes_actual, usarlo como referencia
+    if mes_actual and mes_actual in meses_disponibles:
+        # Encontrar el índice del mes actual
+        meses_lista = list(meses_disponibles)
+        idx_mes_actual = meses_lista.index(mes_actual)
+        # Tomar desde hace 5 meses hasta el mes actual
+        inicio = max(0, idx_mes_actual - 5)
+        meses_a_mostrar = list(meses_disponibles[inicio:idx_mes_actual+1])
+    else:
+        # Comportamiento por defecto: últimos 6 meses
+        meses_a_mostrar = list(meses_disponibles[-6:])
     
     # Filtrar datos para estos meses
     df_filtrado = df_temp[df_temp['MES_NOMBRE'].isin(meses_a_mostrar)].copy()
@@ -3089,37 +3136,12 @@ tab1, tab2 = st.tabs(["Análisis por Semana (Mes)", "Comparativo Multi-Mes"])
 
 # TAB 1: Análisis de semanas para un mes seleccionado
 with tab1:
-    # Obtener meses disponibles
-    meses_disp = get_meses_disponibles()
+    # Usar el mes seleccionado desde los filtros principales
+    mes_nombre_analisis = mes
+    mes_año_display = mes_año_map.get(mes, mes)
     
-    if meses_disp:
-        # Crear lista de opciones con formato "Mes Año"
-        opciones_meses = [mes_año for mes_año, _, _, _ in meses_disp]
-        
-        # Obtener el mes más reciente disponible en DRIVE
-        mes_reciente_tup = get_mes_mas_reciente()
-        mes_reciente_display = mes_reciente_tup[0]  # Formato "Mes Año"
-        
-        # Buscar el índice del mes más reciente en la lista
-        try:
-            index_default = opciones_meses.index(mes_reciente_display)
-        except ValueError:
-            index_default = len(opciones_meses) - 1  # Usar el último mes disponible
-        
-        col_mes_sel, col_espacio = st.columns([2, 3])
-        with col_mes_sel:
-            mes_seleccionado_display = st.selectbox(
-                "Selecciona un mes para analizar:",
-                opciones_meses,
-                index=index_default,  # Mes más reciente por defecto
-                key="mes_analisis"
-            )
-        
-        # Encontrar el mes_nombre del mes seleccionado
-        mes_nombre_analisis = next((mes_nombre for mes_año, mes_nombre, _, _ in meses_disp if mes_año == mes_seleccionado_display), None)
-    else:
-        st.warning("No hay datos disponibles en los registros")
-        mes_nombre_analisis = None
+    # Mostrar información del mes seleccionado
+    st.info(f"📅 Analizando: **{mes_año_display}** (seleccionado desde Filtros)")
     
     if mes_nombre_analisis:
         # Obtener datos de instaladas por día
@@ -3154,7 +3176,7 @@ with tab1:
         
         fig_semanas.update_layout(
             title=dict(
-                text=f"Distribución Diaria de Ventas - {mes_seleccionado_display}",
+                text=f"Distribución Diaria de Ventas - {mes_año_display}",
                 font=dict(size=16, color='#1e293b', family='Arial'),
                 x=0.5,
                 xanchor='center'
@@ -3186,7 +3208,7 @@ with tab1:
         st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
         st.markdown("#### 📊 Comparativa Histórica por Día (Últimos Meses)")
         
-        df_comparativo_diario = get_comparativo_diario_multiples_meses()
+        df_comparativo_diario = get_comparativo_diario_multiples_meses(mes_actual=mes_nombre_analisis)
         
         if not df_comparativo_diario.empty:
             # Extraer columnas de meses (sin la columna 'Día')
@@ -3249,30 +3271,6 @@ with tab1:
             html_table += '</table>'
             
             st.markdown(html_table, unsafe_allow_html=True)
-            
-            # Análisis de variación
-            st.markdown("**Análisis de Variación:**")
-            mes_actual = meses_cols[-1]  # Último mes (más reciente)
-            mes_anterior = meses_cols[-2] if len(meses_cols) > 1 else None
-            
-            if mes_anterior:
-                # Comparar mismo día en ambos meses
-                dias_comunes = min(len(df_comparativo_diario[mes_actual]), len(df_comparativo_diario[mes_anterior]))
-                
-                ventas_actual_comunes = df_comparativo_diario[mes_actual][:dias_comunes].sum()
-                ventas_anterior_comunes = df_comparativo_diario[mes_anterior][:dias_comunes].sum()
-                
-                if ventas_anterior_comunes > 0:
-                    variacion_pct = ((ventas_actual_comunes - ventas_anterior_comunes) / ventas_anterior_comunes * 100)
-                    variacion_texto = f"📈 +{variacion_pct:.0f}%" if variacion_pct > 0 else f"📉 {variacion_pct:.0f}%" if variacion_pct < 0 else "➡️ 0%"
-                    
-                    col_var1, col_var2, col_var3 = st.columns(3)
-                    with col_var1:
-                        st.metric(f"Ventas {mes_actual} (primeros {dias_comunes} días)", ventas_actual_comunes)
-                    with col_var2:
-                        st.metric(f"Ventas {mes_anterior} (primeros {dias_comunes} días)", ventas_anterior_comunes)
-                    with col_var3:
-                        st.metric(f"Variación", variacion_texto)
         else:
             st.info("No hay datos suficientes para realizar la comparativa histórica")
         
@@ -3435,7 +3433,58 @@ with tab1:
             else:
                 st.info("No hay asesores PART TIME")
     else:
-        st.warning(f"No hay datos de instaladas para {mes_seleccionado_display}")
+        st.warning(f"No hay datos de instaladas para {mes_año_display}")
+    
+    # ============= SECCIÓN DE VARIACIÓN DINÁMICA =============
+    st.markdown('<div style="margin-top: 40px;"></div>', unsafe_allow_html=True)
+    st.markdown("#### 📊 Análisis de Variación Mes a Mes")
+    
+    mes_anterior = get_mes_anterior(mes_nombre_analisis) if mes_nombre_analisis else None
+    if mes_anterior:
+        ventas_actual, ventas_anterior, variacion_pct = get_variacion_meses(mes_nombre_analisis, mes_anterior)
+        
+        col_var1, col_var2, col_var3 = st.columns(3, gap="medium")
+        
+        with col_var1:
+            st.metric(
+                label=f"🔵 Ventas {mes_nombre_analisis}",
+                value=f"{int(ventas_actual)}",
+                delta="Mes Actual"
+            )
+        
+        with col_var2:
+            st.metric(
+                label=f"🔷 Ventas {mes_anterior}",
+                value=f"{int(ventas_anterior)}",
+                delta="Mes Anterior"
+            )
+        
+        with col_var3:
+            # Mostrar variación con indicador visual
+            if variacion_pct > 0:
+                emoji_var = "📈"
+                texto_var = f"+{variacion_pct:.1f}%"
+            elif variacion_pct < 0:
+                emoji_var = "📉"
+                texto_var = f"{variacion_pct:.1f}%"
+            else:
+                emoji_var = "➡️"
+                texto_var = "0%"
+            
+            st.metric(
+                label=f"{emoji_var} Variación",
+                value=texto_var,
+                delta="Comparativo"
+            )
+        
+        # Agregar tabla comparativa detallada
+        st.markdown(f"**📋 Comparativa: {mes_nombre_analisis} vs {mes_anterior}**")
+        df_comparativa = pd.DataFrame({
+            'Métrica': ['Ventas Totales', 'Diferencia Absoluta', 'Variación %'],
+            mes_nombre_analisis: [f"{int(ventas_actual)}", f"{int(ventas_actual - ventas_anterior)}", f"{variacion_pct:.1f}%"],
+            mes_anterior: [f"{int(ventas_anterior)}", "—", "—"]
+        })
+        st.dataframe(df_comparativa, use_container_width=True, hide_index=True)
 
 # TAB 2: Comparativo acumulativo entre meses
 with tab2:
@@ -3879,7 +3928,7 @@ st.markdown("### 📋 Análisis de Casos por Nivel (MANTRA)")
 
 # Obtener lista de meses disponibles
 df_mantra_completo = load_mantra_data()
-meses_disponibles = ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo"]
+meses_disponibles = ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio"]
 if df_mantra_completo is not None and not df_mantra_completo.empty:
     meses_en_datos = sorted(df_mantra_completo['Mes'].unique())
     meses_disponibles = [m for m in meses_disponibles if m in meses_en_datos]
@@ -4544,7 +4593,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                         dias_restantes = max(0, 30 - analisis_metas['dias_trabajados'])
                         if dias_restantes > 0:
                             ventas_diarias_necesarias = brecha_mensual / dias_restantes
-                            st.info(f"📈 **Ritmo Necesario**: {ventas_diarias_necesarias:.1f} ventas/día en los {dias_restantes} días restantes")
+                            st.info(f"📈 **Ritmo Necesario**: {round(ventas_diarias_necesarias)} ventas/día en los {dias_restantes} días restantes")
                         else:
                             st.error(f"⏰ **Mes Finalizado**: No hay días restantes. Cumplimiento final: {analisis_metas['cumplimiento_mensual']:.0f}%")
                     else:
@@ -4789,7 +4838,7 @@ with tab_cobertura:
     # Renombrar columnas de fecha para que sean más legibles
     tabla_display.columns = ['Hora'] + [str(col).split()[0] if col != 'TOTAL' else 'TOTAL' for col in tabla_display.columns[1:]]
     
-    # Crear tabla HTML con colores para horas pico - COMPACTA
+    # Crear tabla HTML con colores - MAPA DE CALOR basado en leads con cobertura
     html_table_horas = '<table style="width:100%; border-collapse: collapse; margin: 5px auto; font-size: 11px;">'
     
     # Encabezado
@@ -4798,8 +4847,33 @@ with tab_cobertura:
         html_table_horas += f'<th style="padding: 4px; text-align: center; border-right: 1px solid #ddd; font-size: 10px;">{col}</th>'
     html_table_horas += '</tr>'
     
+    # Calcular totales por hora para identificar horas con más leads
+    tabla_sin_total = tabla_display[tabla_display['Hora'] != 'TOTAL'].copy()
+    tabla_sin_total['Hora'] = pd.to_numeric(tabla_sin_total['Hora'], errors='coerce')
+    
+    # Obtener columnas de fechas (excluir Hora y TOTAL)
+    cols_fechas = [col for col in tabla_display.columns if col not in ['Hora', 'TOTAL']]
+    tabla_sin_total['TOTAL_FILA'] = tabla_sin_total[cols_fechas].apply(lambda row: sum(pd.to_numeric(row, errors='coerce').fillna(0)), axis=1)
+    
+    # Encontrar máximo y mínimo para el gradiente de color
+    max_leads = tabla_sin_total['TOTAL_FILA'].max() if not tabla_sin_total.empty else 0
+    min_leads = tabla_sin_total['TOTAL_FILA'].min() if not tabla_sin_total.empty else 0
+    
+    # Función para generar color gradiente (rojo más intenso = más leads)
+    def get_heat_color(valor, max_val, min_val):
+        if max_val == min_val:
+            return '#ffffff'
+        # Normalizar entre 0 y 1
+        intensidad = (valor - min_val) / (max_val - min_val)
+        # Gradiente de blanco a rojo
+        if intensidad < 0.33:
+            return '#ffffff'  # Blanco
+        elif intensidad < 0.66:
+            return '#fecaca'  # Rojo claro
+        else:
+            return '#fca5a5'  # Rojo más intenso
+    
     # Filas de datos
-    horas_pico = [10, 11, 12, 14, 15, 16]
     for idx, row in tabla_display.iterrows():
         # Saltar la fila de TOTAL
         if str(row['Hora']).upper() == 'TOTAL':
@@ -4809,21 +4883,25 @@ with tab_cobertura:
             hora = int(row['Hora'])
         except (ValueError, TypeError):
             continue
-            
-        es_pico = hora in horas_pico
-        bg_color = '#fef08a' if es_pico else '#ffffff'  # Amarillo para pico, blanco para normal
-        border_left = '5px solid #ef4444' if es_pico else '1px solid #eee'  # Rojo para pico
+        
+        # Calcular total para esta hora
+        total_hora = sum(pd.to_numeric(row[col], errors='coerce') if col not in ['Hora', 'TOTAL'] else 0 for col in tabla_display.columns if col not in ['Hora', 'TOTAL'])
+        
+        # Determinar color basado en intensidad de leads
+        bg_color = get_heat_color(total_hora, max_leads, min_leads)
+        border_intensity = 'bold' if total_hora > (max_leads * 0.7) else 'normal'
+        border_left = '5px solid #dc2626' if total_hora > (max_leads * 0.7) else '1px solid #eee'  # Borde rojo si es hora pico
         
         html_table_horas += f'<tr style="background-color: {bg_color}; border-bottom: 1px solid #eee; border-left: {border_left};">'
         
         for col_idx, col in enumerate(tabla_display.columns):
             valor = row[col]
             is_total = col == 'TOTAL'
-            font_weight = 'bold' if is_total or es_pico else 'normal'
-            color = '#ef4444' if es_pico and is_total else '#1e293b'
+            font_weight = 'bold' if is_total or total_hora > (max_leads * 0.7) else 'normal'
+            color = '#dc2626' if total_hora > (max_leads * 0.7) and is_total else '#1e293b'
             
-            if es_pico and col_idx == 0:
-                html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;"><span style="background-color: #ef4444; color: white; padding: 1px 3px; border-radius: 2px; font-size: 9px;">🔥 {valor}</span></td>'
+            if total_hora > (max_leads * 0.7) and col_idx == 0:
+                html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;"><span style="background-color: #dc2626; color: white; padding: 1px 3px; border-radius: 2px; font-size: 9px;">🔥 {valor}</span></td>'
             else:
                 html_table_horas += f'<td style="padding: 4px; text-align: center; border-right: 1px solid #eee; font-weight: {font_weight}; color: {color}; font-size: 11px;">{valor}</td>'
         
