@@ -2681,7 +2681,7 @@ st.markdown("### ⚙️ Filtros y Opciones")
 col_filtros = st.columns(3, gap="medium")
 
 with col_filtros[0]:
-    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo"], index=6)
+    mes = st.selectbox("📅 Selecciona Mes", ["Noviembre", "Diciembre", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio"], index=7)
 
 # Mapeo de meses a años
 mes_año_map = {
@@ -2691,7 +2691,8 @@ mes_año_map = {
     "Febrero": "Febrero 2026",
     "Marzo": "Marzo 2026",
     "Abril": "Abril 2026",
-    "Mayo": "Mayo 2026"
+    "Mayo": "Mayo 2026",
+    "Junio": "Junio 2026"
 }
 
 # Header mejorado - Dinámico
