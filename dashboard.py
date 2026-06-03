@@ -96,8 +96,8 @@ def get_variacion_meses(mes_actual, mes_anterior):
 
 @st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
-    """Calcula la conversión: Ventas Del Mes (DRIVE) / Con Cobertura (MANTRA)
-    = Total de Transacciones en DRIVE / Registros con cobertura en MANTRA"""
+    """Calcula la conversión: (INSTALADAS + PENDIENTE) / Con Cobertura
+    Filtra registros usando rango de fechas (1/mes hasta último día del mes)"""
     df_mantra = load_mantra_data()
     df_drive = load_drive_data()
     
@@ -112,14 +112,47 @@ def get_conversion_mantra_mes(mes_seleccionado="Noviembre"):
     if con_cobertura == 0:
         return 0
     
-    # Obtener Ventas Del Mes del DRIVE (TODAS las transacciones, no solo INSTALADO)
-    ventas_del_mes = get_ventas_del_mes_por_fecha(mes_seleccionado)
+    # Mapeo de números de mes
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
     
-    if ventas_del_mes == 0:
+    if mes_num is None:
         return 0
     
-    # Conversión = Ventas Del Mes / Con Cobertura
-    conversion_pct = round((ventas_del_mes / con_cobertura * 100)) if con_cobertura > 0 else 0
+    # Filtrar DRIVE por rango de fechas (1/mes hasta último día del mes)
+    df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
+    
+    # Determinar año
+    año_actual = df_drive['FECHA'].dt.year.max()
+    
+    # Crear fecha de inicio (1/mes/año)
+    fecha_inicio = pd.Timestamp(year=año_actual, month=mes_num, day=1)
+    
+    # Crear fecha de fin (último día del mes)
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_actual + 1, month=1, day=1) - pd.Timedelta(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_actual, month=mes_num + 1, day=1) - pd.Timedelta(days=1)
+    
+    df_mes_drive = df_drive[(df_drive['FECHA'] >= fecha_inicio) & (df_drive['FECHA'] <= fecha_fin)].copy()
+    
+    # Contar INSTALADAS + PENDIENTE (todas las transacciones del mes)
+    df_mes_drive['ESTADO'] = df_mes_drive['ESTADO'].astype(str).str.strip()
+    
+    total_transacciones = len(df_mes_drive[
+        (df_mes_drive['ESTADO'] == 'INSTALADO') |
+        (df_mes_drive['ESTADO'] == 'PENDIENTE')
+    ])
+    
+    if total_transacciones == 0:
+        return 0
+    
+    # Conversión = (INSTALADO + PENDIENTE) / Con Cobertura
+    conversion_pct = round((total_transacciones / con_cobertura * 100)) if con_cobertura > 0 else 0
     return conversion_pct
 
 @st.cache_data(ttl=3600)
@@ -217,15 +250,15 @@ def get_instaladas_mes(mes_seleccionado="Noviembre"):
     return instaladas
 
 def get_ventas_generales_mes(mes_seleccionado="Noviembre"):
-    """Obtiene el total de TODAS las transacciones del mes
-    = INSTALADAS + PENDIENTES + CANCELADAS
-    Filtra por columna MES"""
+    """Obtiene el total de TODAS las transacciones del mes (por FECHA real)
+    VENTAS GENERALES = INSTALADAS + PENDIENTES + CANCELADAS (sin importar PAGO)
+    Usa la columna MES como fuente de verdad para incluir transacciones que pertenecen al mes"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
         return 0
     
-    # Filtrar por mes usando columna MES
+    # Filtrar por mes usando columna MES (como fuente de verdad)
     if 'MES' in df_drive.columns:
         df_mes = df_drive[df_drive['MES'] == mes_seleccionado]
     else:
@@ -239,36 +272,60 @@ def get_ventas_generales_mes(mes_seleccionado="Noviembre"):
         df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
         df_mes = df_drive[df_drive['FECHA'].dt.month == mes_num]
     
-    # Total de TODAS las transacciones
+    # Total de TODAS las transacciones del mes
     total_transacciones = len(df_mes)
     return total_transacciones
 
 @st.cache_data(ttl=60)  # Cache de 60 segundos para desarrollo
 def get_ventas_del_mes_por_fecha(mes_seleccionado="Abril"):
-    """Obtiene las transacciones para el mes especificado usando la columna MES del DRIVE.
-    Esto es más confiable que filtrar por fechas ya que MES contiene el mes exacto."""
+    """Obtiene las VENTAS DEL MES (solo registros con PAGO) filtrando por rango de fechas.
+    VENTAS DEL MES = registros con PAGO desde el 1 del mes hasta el último día del mes"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
         return 0
     
-    # Mapeo de meses a nombres de columna MES
-    mes_nombres = {
-        'Enero': 'Enero', 'Febrero': 'Febrero', 'Marzo': 'Marzo', 'Abril': 'Abril',
-        'Mayo': 'Mayo', 'Junio': 'Junio', 'Julio': 'Julio', 'Agosto': 'Agosto',
-        'Septiembre': 'Septiembre', 'Octubre': 'Octubre', 'Noviembre': 'Noviembre', 'Diciembre': 'Diciembre'
+    # Mapeo de meses a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
     }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
     
-    mes_limpio = mes_nombres.get(mes_seleccionado, None)
-    if mes_limpio is None:
+    if mes_num is None:
         return 0
     
-    # Filtrar por la columna MES directamente
-    df_mes = df_drive[df_drive['MES'] == mes_limpio]
+    # Convertir FECHA a datetime
+    df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
     
-    # Contar todas las transacciones de ese mes
-    total_ventas = len(df_mes)
-    return total_ventas
+    # Determinar año (usar el año actual o el de los datos)
+    año_actual = df_drive['FECHA'].dt.year.max()
+    
+    # Crear fecha de inicio (1/mes/año)
+    fecha_inicio = pd.Timestamp(year=año_actual, month=mes_num, day=1)
+    
+    # Crear fecha de fin (último día del mes)
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_actual + 1, month=1, day=1) - pd.Timedelta(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_actual, month=mes_num + 1, day=1) - pd.Timedelta(days=1)
+    
+    # Filtrar por rango de fechas
+    df_mes = df_drive[(df_drive['FECHA'] >= fecha_inicio) & (df_drive['FECHA'] <= fecha_fin)].copy()
+    
+    if df_mes.empty:
+        return 0
+    
+    # Filtrar solo registros con PAGO (ventas reales)
+    df_mes['PAGO'] = df_mes['PAGO'].astype(str).str.strip()
+    ventas_con_pago = len(df_mes[
+        (df_mes['PAGO'] != '') & 
+        (df_mes['PAGO'] != 'nan') & 
+        (df_mes['PAGO'].notna())
+    ])
+    
+    return ventas_con_pago
 
 @st.cache_data(ttl=3600)
 def get_no_pago_mes(mes_seleccionado="Noviembre"):
@@ -1152,12 +1209,25 @@ def get_ventas_asesor_mes(asesor, mes_seleccionado="Enero"):
     if mes_num is None:
         return 0
     
-    # Convertir FECHA a datetime para filtrar por fecha real
+    # Convertir FECHA a datetime para filtrar por rango de fechas
     df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
     
-    # Filtrar por mes actual (usando FECHA) y asesor
+    # Determinar año
+    año_actual = df_drive['FECHA'].dt.year.max()
+    
+    # Crear fecha de inicio (1/mes/año)
+    fecha_inicio = pd.Timestamp(year=año_actual, month=mes_num, day=1)
+    
+    # Crear fecha de fin (último día del mes)
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_actual + 1, month=1, day=1) - pd.Timedelta(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_actual, month=mes_num + 1, day=1) - pd.Timedelta(days=1)
+    
+    # Filtrar por rango de fechas y asesor
     df_mes_drive = df_drive[
-        (df_drive['FECHA'].dt.month == mes_num) &
+        (df_drive['FECHA'] >= fecha_inicio) &
+        (df_drive['FECHA'] <= fecha_fin) &
         (df_drive['ASESOR'] == asesor_clean)
     ].copy()
     
@@ -1200,10 +1270,25 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     if mes_num is None:
         return 0
     
-    # Convertir FECHA a datetime y filtrar por mes real
+    # Convertir FECHA a datetime para filtrar por rango de fechas
     df_drive_temp['FECHA'] = pd.to_datetime(df_drive_temp['FECHA'], errors='coerce')
+    
+    # Determinar año
+    año_actual = df_drive_temp['FECHA'].dt.year.max()
+    
+    # Crear fecha de inicio (1/mes/año)
+    fecha_inicio = pd.Timestamp(year=año_actual, month=mes_num, day=1)
+    
+    # Crear fecha de fin (último día del mes)
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_actual + 1, month=1, day=1) - pd.Timedelta(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_actual, month=mes_num + 1, day=1) - pd.Timedelta(days=1)
+    
+    # Filtrar por rango de fechas y asesor
     df_mes_drive = df_drive_temp[
-        (df_drive_temp['FECHA'].dt.month == mes_num) &
+        (df_drive_temp['FECHA'] >= fecha_inicio) &
+        (df_drive_temp['FECHA'] <= fecha_fin) &
         (df_drive_temp['ASESOR'] == asesor_clean)
     ].copy()
     
@@ -1801,7 +1886,7 @@ def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="To
 @st.cache_data(ttl=3600)
 def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
     """Obtiene historial detallado de transacciones por asesor en el DRIVE
-    Filtra por FECHA real del mes (no por columna MES)"""
+    Filtra por rango de fechas (1/mes hasta último día del mes)"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
@@ -1821,8 +1906,20 @@ def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
     if mes_num is None:
         return pd.DataFrame()
     
-    # Filtrar por mes actual (usando FECHA) y asesor
-    df_mes = df_drive[df_drive['FECHA'].dt.month == mes_num].copy()
+    # Determinar año
+    año_actual = df_drive['FECHA'].dt.year.max()
+    
+    # Crear fecha de inicio (1/mes/año)
+    fecha_inicio = pd.Timestamp(year=año_actual, month=mes_num, day=1)
+    
+    # Crear fecha de fin (último día del mes)
+    if mes_num == 12:
+        fecha_fin = pd.Timestamp(year=año_actual + 1, month=1, day=1) - pd.Timedelta(days=1)
+    else:
+        fecha_fin = pd.Timestamp(year=año_actual, month=mes_num + 1, day=1) - pd.Timedelta(days=1)
+    
+    # Filtrar por rango de fechas
+    df_mes = df_drive[(df_drive['FECHA'] >= fecha_inicio) & (df_drive['FECHA'] <= fecha_fin)].copy()
     
     # Limpiar espacios en la columna ASESOR
     df_mes['ASESOR'] = df_mes['ASESOR'].astype(str).str.strip()
@@ -1843,7 +1940,8 @@ def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
 
 @st.cache_data(ttl=3600)
 def get_drive_asesor_kpis(asesor, mes_seleccionado="Marzo"):
-    """Calcula KPIs importantes para un asesor en el DRIVE"""
+    """Calcula KPIs importantes para un asesor en el DRIVE
+    IMPORTANTE: Usa solo registros con PAGO (ventas reales)"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
@@ -1854,19 +1952,42 @@ def get_drive_asesor_kpis(asesor, mes_seleccionado="Marzo"):
     df_asesor['PAGO'] = df_asesor['PAGO'].astype(str).str.strip()
     df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
     
-    total_ventas = len(df_asesor)
-    instaladas = len(df_asesor[df_asesor['ESTADO'] == 'INSTALADO'])
-    pendientes = len(df_asesor[df_asesor['ESTADO'] == 'PENDIENTE'])
-    canceladas = len(df_asesor[df_asesor['ESTADO'] == 'CANCELADO'])
+    # Filtrar SOLO registros con PAGO (son las ventas reales)
+    df_con_pago = df_asesor[
+        (df_asesor['PAGO'] != '') & 
+        (df_asesor['PAGO'] != 'nan') & 
+        (df_asesor['PAGO'].notna())
+    ].copy()
     
-    # Tasa de conversión (instaladas / total)
+    if df_con_pago.empty:
+        return {
+            'total_ventas': 0,
+            'instaladas': 0,
+            'pendientes': 0,
+            'canceladas': 0,
+            'tasa_conversion': 0,
+            'tasa_cancelacion': 0,
+            'tiempo_promedio_dias': 0,
+            'velocidad_venta': 0,
+            'dias_activos': 0,
+            'estabilidad_ventas': 0,
+            'fecha_primera_venta': None,
+            'fecha_ultima_venta': None,
+        }
+    
+    total_ventas = len(df_con_pago)
+    instaladas = len(df_con_pago[df_con_pago['ESTADO'] == 'INSTALADO'])
+    pendientes = len(df_con_pago[df_con_pago['ESTADO'] == 'PENDIENTE'])
+    canceladas = len(df_con_pago[df_con_pago['ESTADO'] == 'CANCELADO'])
+    
+    # Tasa de conversión: instaladas / total ventas (SOLO con PAGO)
     tasa_conversion = (instaladas / total_ventas * 100) if total_ventas > 0 else 0
     
     # Tasa de cancelación
     tasa_cancelacion = (canceladas / total_ventas * 100) if total_ventas > 0 else 0
     
     # Tiempo promedio entre ventas (en días)
-    fechas_validas = df_asesor['FECHA'].dropna()
+    fechas_validas = df_con_pago['FECHA'].dropna()
     if len(fechas_validas) > 1:
         dias_totales = (fechas_validas.max() - fechas_validas.min()).days
         tiempo_promedio = dias_totales / (len(fechas_validas) - 1) if len(fechas_validas) > 1 else 0
@@ -1874,11 +1995,11 @@ def get_drive_asesor_kpis(asesor, mes_seleccionado="Marzo"):
         tiempo_promedio = 0
     
     # Velocidad de venta (ventas por día)
-    dias_activos = len(df_asesor['FECHA'].dt.date.unique()) if len(fechas_validas) > 0 else 1
+    dias_activos = len(df_con_pago['FECHA'].dt.date.unique()) if len(fechas_validas) > 0 else 1
     velocidad_venta = total_ventas / dias_activos if dias_activos > 0 else 0
     
     # Estabilidad (desviación estándar de ventas por día)
-    ventas_por_dia = df_asesor.groupby(df_asesor['FECHA'].dt.date).size()
+    ventas_por_dia = df_con_pago.groupby(df_con_pago['FECHA'].dt.date).size()
     estabilidad = ventas_por_dia.std() if len(ventas_por_dia) > 1 else 0
     
     return {
@@ -2993,9 +3114,9 @@ if asesor_seleccionado == "Todos":
         # Efectividad - Nueva fórmula: Contrato OK / Con Cobertura (de MANTRA)
         efectividad_mes = get_conversion_mantra_mes(mes)
         
-        # Cumplimiento - NUEVA FÓRMULA: VENTAS DEL MES / 735
-        # Fórmula: (Ventas Del Mes / 735) * 100
-        cumplimiento_total = round((total_conversion_excel / 735 * 100)) if 735 > 0 else 0
+        # Cumplimiento - NUEVA FÓRMULA: INSTALADAS / LEADS * 100
+        # Cumplimiento = Total de instaladas / Total de Leads
+        cumplimiento_total = round((ventas_total / total_leads_excel * 100)) if total_leads_excel > 0 else 0
         
         # Ventas generales (total de todas las transacciones)
         ventas_generales = get_ventas_generales_mes(mes)
