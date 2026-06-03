@@ -1129,7 +1129,9 @@ def get_con_cobertura_asesor_mes(asesor, mes_seleccionado="Enero"):
 
 @st.cache_data(ttl=3600)
 def get_ventas_asesor_mes(asesor, mes_seleccionado="Enero"):
-    """Obtiene el total de ventas (PAGO) del asesor en DRIVE para un mes específico"""
+    """Obtiene el total de ventas (PAGO) del asesor en DRIVE para un mes específico.
+    IMPORTANTE: Filtra por FECHA real del mes, no solo por columna MES.
+    Esto asegura que las ventas sean netamente del mes en cuestión."""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
@@ -1139,14 +1141,25 @@ def get_ventas_asesor_mes(asesor, mes_seleccionado="Enero"):
     df_drive['ASESOR'] = df_drive['ASESOR'].astype(str).str.strip()
     asesor_clean = asesor.strip()
     
-    # Filtrar por mes del DRIVE
-    if 'MES' in df_drive.columns:
-        df_mes_drive = df_drive[
-            (df_drive['MES'] == mes_seleccionado) & 
-            (df_drive['ASESOR'] == asesor_clean)
-        ].copy()
-    else:
-        df_mes_drive = df_drive[df_drive['ASESOR'] == asesor_clean].copy()
+    # Mapeo de nombres de mes a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    
+    if mes_num is None:
+        return 0
+    
+    # Convertir FECHA a datetime para filtrar por fecha real
+    df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
+    
+    # Filtrar por mes actual (usando FECHA) y asesor
+    df_mes_drive = df_drive[
+        (df_drive['FECHA'].dt.month == mes_num) &
+        (df_drive['ASESOR'] == asesor_clean)
+    ].copy()
     
     if df_mes_drive.empty:
         return 0
@@ -1162,7 +1175,8 @@ def get_ventas_asesor_mes(asesor, mes_seleccionado="Enero"):
 
 def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
     """Calcula la conversión por asesor: Transacciones CON PAGO en DRIVE / Con Cobertura (de MANTRA)
-    Cuenta todas las transacciones (INSTALADAS + CANCELADAS) que tengan PAGO"""
+    Cuenta todas las transacciones (INSTALADAS + CANCELADAS) que tengan PAGO.
+    IMPORTANTE: Filtra VENTAS por FECHA real del mes, no solo por columna MES."""
     df_drive = load_drive_data()
     df_mantra = load_mantra_data()
     
@@ -1170,19 +1184,28 @@ def get_conversion_asesor_mes(asesor, mes_seleccionado="Noviembre"):
         return 0
     
     # ========= CONTAR PAGO EN DRIVE =========
-    # Filtrar DRIVE por mes y asesor
+    # Filtrar DRIVE por mes (usando FECHA) y asesor
     df_drive_temp = df_drive.copy()
     df_drive_temp['ASESOR'] = df_drive_temp['ASESOR'].astype(str).str.strip()
     asesor_clean = asesor.strip()
     
-    # Filtrar por mes del DRIVE
-    if 'MES' in df_drive_temp.columns:
-        df_mes_drive = df_drive_temp[
-            (df_drive_temp['MES'] == mes_seleccionado) & 
-            (df_drive_temp['ASESOR'] == asesor_clean)
-        ].copy()
-    else:
-        df_mes_drive = df_drive_temp[df_drive_temp['ASESOR'] == asesor_clean].copy()
+    # Mapeo de nombres de mes a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    
+    if mes_num is None:
+        return 0
+    
+    # Convertir FECHA a datetime y filtrar por mes real
+    df_drive_temp['FECHA'] = pd.to_datetime(df_drive_temp['FECHA'], errors='coerce')
+    df_mes_drive = df_drive_temp[
+        (df_drive_temp['FECHA'].dt.month == mes_num) &
+        (df_drive_temp['ASESOR'] == asesor_clean)
+    ].copy()
     
     if df_mes_drive.empty:
         return 0
@@ -1463,20 +1486,23 @@ def load_data_codigo_carga(mes_seleccionado=None):
     leads_dict = df_mantra_mes.groupby('Agente').size().to_dict()
     
     # ============= ESTADÍSTICAS DESDE DRIVE =============
-    # Filtrar por MES exacto en DRIVE
-    df_drive_mes = df_drive[df_drive['MES'] == mes_seleccionado].copy()
+    # Para VENTAS: Filtrar por FECHA real del mes (no solo por columna MES)
+    # Para INSTALADAS/PENDIENTES: Usar la columna MES como fuente de verdad
     
-    if df_drive_mes.empty:
-        df_drive_mes = pd.DataFrame()
-    else:
-        # Limpiar espacios en blanco en columnas clave
-        df_drive_mes['CODIGO DE CARGA'] = df_drive_mes['CODIGO DE CARGA'].astype(str).str.strip()
-        df_drive_mes['ESTADO'] = df_drive_mes['ESTADO'].astype(str).str.strip()
-        df_drive_mes['PAGO'] = df_drive_mes['PAGO'].astype(str).str.strip()
-        df_drive_mes['FECHA'] = pd.to_datetime(df_drive_mes['FECHA'], errors='coerce')
-        
-        # Nota: No hacemos validación adicional de fecha ya que la columna MES es la fuente de verdad
-        # Evitamos doble filtrado que podría excluir registros válidos
+    # Mapeo de nombres de mes a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    
+    # Preparar dataframe completo de DRIVE con conversión de fechas
+    df_drive_temp = df_drive.copy()
+    df_drive_temp['FECHA'] = pd.to_datetime(df_drive_temp['FECHA'], errors='coerce')
+    df_drive_temp['CODIGO DE CARGA'] = df_drive_temp['CODIGO DE CARGA'].astype(str).str.strip()
+    df_drive_temp['ESTADO'] = df_drive_temp['ESTADO'].astype(str).str.strip()
+    df_drive_temp['PAGO'] = df_drive_temp['PAGO'].astype(str).str.strip()
     
     # Agrupar por CODIGO DE CARGA y contar estados
     grupos = []
@@ -1498,15 +1524,22 @@ def load_data_codigo_carga(mes_seleccionado=None):
         pendientes = 0
         
         # Si hay datos en DRIVE, buscar registros del agente
-        if not df_drive_mes.empty:
-            df_agente = df_drive_mes[df_drive_mes['CODIGO DE CARGA'] == agente]
+        if not df_drive_temp.empty:
+            # Para VENTAS: Filtrar por FECHA real del mes + PAGO
+            if mes_num is not None:
+                df_agente_ventas = df_drive_temp[
+                    (df_drive_temp['FECHA'].dt.month == mes_num) &
+                    (df_drive_temp['CODIGO DE CARGA'] == agente)
+                ]
+                # VENTAS = registros con PAGO (no vacío) del mes actual por fecha
+                ventas = len(df_agente_ventas[(df_agente_ventas['PAGO'] != '') & (df_agente_ventas['PAGO'] != 'nan') & (df_agente_ventas['PAGO'].notna())])
             
-            if not df_agente.empty:
-                # VENTAS = registros con PAGO (no vacío)
-                ventas = len(df_agente[(df_agente['PAGO'] != '') & (df_agente['PAGO'] != 'nan') & (df_agente['PAGO'].notna())])
-                
-                # PENDIENTES = registros con ESTADO='PENDIENTE'
-                pendientes = len(df_agente[df_agente['ESTADO'] == 'PENDIENTE'])
+            # Para PENDIENTES: Usar la columna MES (como antes)
+            df_agente_pendientes = df_drive_temp[
+                (df_drive_temp['MES'] == mes_seleccionado) &
+                (df_drive_temp['CODIGO DE CARGA'] == agente)
+            ]
+            pendientes = len(df_agente_pendientes[df_agente_pendientes['ESTADO'] == 'PENDIENTE'])
         
         grupos.append({
             'CODIGO_CARGA': agente,
@@ -1767,14 +1800,29 @@ def get_detalle_leads_cobertura(mes_seleccionado="Mayo", asesor_seleccionado="To
 
 @st.cache_data(ttl=3600)
 def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
-    """Obtiene historial detallado de transacciones por asesor en el DRIVE"""
+    """Obtiene historial detallado de transacciones por asesor en el DRIVE
+    Filtra por FECHA real del mes (no por columna MES)"""
     df_drive = load_drive_data()
     
     if df_drive is None or df_drive.empty:
         return pd.DataFrame()
     
-    # Filtrar por mes y asesor
-    df_mes = df_drive[df_drive['MES'] == mes_seleccionado].copy() if 'MES' in df_drive.columns else df_drive
+    # Convertir FECHA a datetime para filtrar por fecha real
+    df_drive['FECHA'] = pd.to_datetime(df_drive['FECHA'], errors='coerce')
+    
+    # Mapeo de nombres de mes a números
+    mes_numeros = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4,
+        'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8,
+        'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+    }
+    mes_num = mes_numeros.get(mes_seleccionado, None)
+    
+    if mes_num is None:
+        return pd.DataFrame()
+    
+    # Filtrar por mes actual (usando FECHA) y asesor
+    df_mes = df_drive[df_drive['FECHA'].dt.month == mes_num].copy()
     
     # Limpiar espacios en la columna ASESOR
     df_mes['ASESOR'] = df_mes['ASESOR'].astype(str).str.strip()
@@ -1784,9 +1832,6 @@ def get_drive_history_by_asesor(asesor, mes_seleccionado="Marzo"):
     
     if df_asesor.empty:
         return pd.DataFrame()
-    
-    # Limpiar fechas
-    df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
     
     # Ordenar por fecha
     df_asesor = df_asesor.sort_values('FECHA')
@@ -1908,42 +1953,46 @@ def get_desglose_diario(asesor, mes_seleccionado="Marzo"):
 
 @st.cache_data(ttl=3600)
 def get_crecimiento_ventas(asesor, mes_seleccionado="Marzo"):
-    """Obtiene el crecimiento acumulado de ventas por día con promedio"""
+    """Obtiene el crecimiento acumulado de ventas por día (SOLO PAGO del mes actual)"""
     df_asesor = get_drive_history_by_asesor(asesor, mes_seleccionado)
     
     if df_asesor.empty:
         return pd.DataFrame()
     
     df_asesor['FECHA'] = pd.to_datetime(df_asesor['FECHA'], errors='coerce')
-    df_asesor['ESTADO'] = df_asesor['ESTADO'].astype(str).str.strip()
+    df_asesor['PAGO'] = df_asesor['PAGO'].astype(str).str.strip()
     
-    # Contar ventas diarias por tipo
-    ventas_diarias = df_asesor.groupby([df_asesor['FECHA'].dt.date, 'ESTADO']).size().unstack(fill_value=0)
+    # IMPORTANTE: Filtrar SOLO registros con PAGO (que son las ventas reales del mes)
+    df_con_pago = df_asesor[
+        (df_asesor['PAGO'] != '') & 
+        (df_asesor['PAGO'] != 'nan') & 
+        (df_asesor['PAGO'].notna())
+    ].copy()
     
-    # Calcular acumuladas
+    if df_con_pago.empty:
+        return pd.DataFrame()
+    
+    # Agrupar por fecha (solo ventas del mes actual)
+    ventas_diarias = df_con_pago.groupby(df_con_pago['FECHA'].dt.date).size()
+    
+    if ventas_diarias.empty:
+        return pd.DataFrame()
+    
+    # Crear dataframe con acumuladas
     crecimiento = pd.DataFrame()
     crecimiento['Fecha'] = ventas_diarias.index
+    crecimiento['TOTAL'] = ventas_diarias.values
     
-    # Usar columnas si existen, sino 0
-    instaladas = ventas_diarias['INSTALADO'].values if 'INSTALADO' in ventas_diarias.columns else np.zeros(len(ventas_diarias))
-    canceladas = ventas_diarias['CANCELADO'].values if 'CANCELADO' in ventas_diarias.columns else np.zeros(len(ventas_diarias))
-    pendientes = ventas_diarias['PENDIENTE'].values if 'PENDIENTE' in ventas_diarias.columns else np.zeros(len(ventas_diarias))
-    
-    crecimiento['TOTAL'] = instaladas + canceladas + pendientes
-    crecimiento['Instaladas'] = instaladas
-    crecimiento['Canceladas'] = canceladas
-    crecimiento['Pendientes'] = pendientes
-    
-    # Calcular acumuladas
+    # Calcular acumulada
     crecimiento['Total Acumulado'] = crecimiento['TOTAL'].cumsum()
-    crecimiento['Instaladas Acumuladas'] = crecimiento['Instaladas'].cumsum()
     
-    # Calcular promedio diario
-    promedio_diario = crecimiento['TOTAL'].mean()
-    crecimiento['Promedio'] = promedio_diario
-    crecimiento['Estado_Promedio'] = crecimiento['TOTAL'].apply(
-        lambda x: 'Arriba del Promedio' if x >= promedio_diario else 'Bajo el Promedio'
-    )
+    # Para instaladas acumuladas, contar solo INSTALADO
+    df_instaladas = df_con_pago[df_con_pago['ESTADO'] == 'INSTALADO'].copy()
+    instaladas_diarias = df_instaladas.groupby(df_instaladas['FECHA'].dt.date).size()
+    
+    # Mapear instaladas a las fechas
+    crecimiento['Instaladas'] = crecimiento['Fecha'].map(instaladas_diarias).fillna(0)
+    crecimiento['Instaladas Acumuladas'] = crecimiento['Instaladas'].cumsum()
     
     return crecimiento
 
@@ -4263,54 +4312,84 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
             df_crecimiento = get_crecimiento_ventas(asesor_seleccionado, mes)
             
             if not df_crecimiento.empty:
-                # Gráfico de línea de crecimiento acumulado CON PROMEDIO
+                # Gráfico estilo "olas de mar" con áreas rellenas
                 fig_crecimiento = go.Figure()
                 
-                # Línea de total acumulado
+                # Línea de total acumulado con relleno (ola principal)
                 fig_crecimiento.add_trace(go.Scatter(
                     x=df_crecimiento['Fecha'],
                     y=df_crecimiento['Total Acumulado'],
+                    fill='tozeroy',
+                    fillcolor='rgba(25, 118, 210, 0.3)',
                     mode='lines+markers',
                     name='Total Acumulado',
-                    line=dict(color='#1976d2', width=3),
-                    marker=dict(size=8)
+                    line=dict(color='#1976d2', width=4, shape='spline'),
+                    marker=dict(size=10, color='#1976d2', symbol='circle'),
+                    hovertemplate='<b>Fecha:</b> %{x}<br><b>Total Acumulado:</b> %{y}<extra></extra>'
                 ))
                 
-                # Línea de instaladas acumuladas
+                # Línea de instaladas acumuladas con relleno (ola secundaria)
                 fig_crecimiento.add_trace(go.Scatter(
                     x=df_crecimiento['Fecha'],
                     y=df_crecimiento['Instaladas Acumuladas'],
+                    fill='tozeroy',
+                    fillcolor='rgba(76, 175, 80, 0.2)',
                     mode='lines+markers',
                     name='Instaladas Acumuladas',
-                    line=dict(color='#4caf50', width=2, dash='dash'),
-                    marker=dict(size=6)
+                    line=dict(color='#4caf50', width=3, shape='spline'),
+                    marker=dict(size=8, color='#4caf50', symbol='diamond'),
+                    hovertemplate='<b>Fecha:</b> %{x}<br><b>Instaladas:</b> %{y}<extra></extra>'
                 ))
                 
                 fig_crecimiento.update_layout(
-                    title=f"Crecimiento Acumulado de Ventas por Día - {mes}",
-                    xaxis_title="Fecha",
-                    yaxis_title="Cantidad Acumulada",
-                    height=400,
+                    title=f"🌊 Crecimiento Acumulado de Ventas por Día - {mes}",
+                    xaxis_title="📅 Fecha",
+                    yaxis_title="📊 Cantidad Acumulada",
+                    height=450,
                     hovermode='x unified',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
+                    plot_bgcolor='rgba(240,248,255,0.5)',
+                    paper_bgcolor='rgba(255,255,255,1)',
+                    font=dict(family="Arial, sans-serif", size=11),
+                    xaxis=dict(
+                        showgrid=True, 
+                        gridwidth=1, 
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#1976d2'
+                    ),
+                    yaxis=dict(
+                        showgrid=True, 
+                        gridwidth=1, 
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#1976d2'
+                    ),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
                 )
                 
                 st.plotly_chart(fig_crecimiento, use_container_width=True)
                 
                 # Gráfico de barras: Desempeño diario vs promedio
                 promedio_diario = df_crecimiento['TOTAL'].mean()
-                colores_barras = ['#4caf50' if x >= promedio_diario else '#ff6b6b' for x in df_crecimiento['TOTAL']]
+                colores_barras = ['#00bcd4' if x >= promedio_diario else '#ff7043' for x in df_crecimiento['TOTAL']]
                 
                 fig_desempeño = go.Figure(data=[
                     go.Bar(
                         x=df_crecimiento['Fecha'],
                         y=df_crecimiento['TOTAL'],
-                        marker=dict(color=colores_barras),
+                        marker=dict(color=colores_barras, line=dict(color='#1976d2', width=1)),
                         name='Ventas del Día',
                         text=df_crecimiento['TOTAL'],
-                        textposition='auto'
+                        textposition='auto',
+                        hovertemplate='<b>Fecha:</b> %{x}<br><b>Ventas:</b> %{y}<extra></extra>'
                     )
                 ])
                 
@@ -4318,20 +4397,35 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                 fig_desempeño.add_hline(
                     y=promedio_diario,
                     line_dash="dash",
-                    line_color="orange",
+                    line_color="#ff9800",
                     annotation_text=f"Promedio: {promedio_diario:.0f}",
                     annotation_position="right"
                 )
                 
                 fig_desempeño.update_layout(
-                    title=f"Desempeño Diario vs Promedio - {mes}",
-                    xaxis_title="Fecha",
-                    yaxis_title="Ventas del Día",
+                    title=f"📊 Desempeño Diario vs Promedio - {mes}",
+                    xaxis_title="📅 Fecha",
+                    yaxis_title="💰 Ventas del Día",
                     height=400,
                     hovermode='x unified',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
-                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
+                    plot_bgcolor='rgba(240,248,255,0.5)',
+                    paper_bgcolor='rgba(255,255,255,1)',
+                    xaxis=dict(
+                        showgrid=True, 
+                        gridwidth=1, 
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#1976d2'
+                    ),
+                    yaxis=dict(
+                        showgrid=True, 
+                        gridwidth=1, 
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#1976d2'
+                    ),
                     showlegend=False
                 )
                 
@@ -4357,7 +4451,7 @@ if df_drive_mes_actual is not None and not df_drive_mes_actual.empty:
                     
                     col_crec1, col_crec2, col_crec3 = st.columns(3)
                     with col_crec1:
-                        st.metric("Crecimiento Total", f"+{crecimiento_total:.0f} ventas")
+                        st.metric("🚀 Crecimiento Total", f"+{crecimiento_total:.0f} ventas")
                     with col_crec2:
                         st.metric("Promedio Diario", f"{promedio_diario:.0f} ventas/día")
                     with col_crec3:
